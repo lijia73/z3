@@ -250,7 +250,7 @@ public:
         // MIN - at the minimum,
         // MIXED : the row does not constraint the base variable to be at an extremum
         // UNDEF is the initial state
-        m_polarity = row_polarity::UNDEF; 
+        m_polarity = lia.settings().m_gomory_polarity? row_polarity::UNDEF: row_polarity::MIXED;
         // gomory cut will be  m_t >= m_k and the current solution has a property m_t < m_k
         m_k = 1;
         m_t.clear();
@@ -359,7 +359,10 @@ public:
     }
 
  // return the minimal distance from the variable value to an integer
-    mpq get_gomory_score(const int_solver& lia, lpvar j) {
+   mpq gomory::get_gomory_score(lpvar j) {
+        if (!lia.settings().m_gomory_use_closest_int) {
+            return mpq(lia.random() % 10000, 1);
+        }
         const mpq& val = lia.get_value(j).x;
         auto l = val - floor(val);
         if (l <= mpq(1, 2))
@@ -375,7 +378,7 @@ public:
                 continue;
             SASSERT(!lia.is_fixed(j));            
             sorted_vars.push_back(j);
-            score[j] = get_gomory_score(lia, j);
+            score[j] = get_gomory_score(j);
         }
         // prefer the variables with the values close to integers
         sorted_vars.sort([&](lpvar j, lpvar k) {
@@ -492,7 +495,7 @@ public:
                 return lia_move::undef;
         }
 
-        if (big_cuts.size()) {
+        if (big_cuts.size() && lia.settings().m_gomory_use_big_cuts) {
             lra.push();        
             for (auto const& cut : big_cuts) 
                 add_cut(cut.t, cut.k, cut.dep);

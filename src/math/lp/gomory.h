@@ -31,6 +31,7 @@ namespace lp {
         unsigned_vector gomory_select_int_infeasible_vars(unsigned num_cuts);
         bool is_gomory_cut_target(lpvar j); 
         lia_move get_cut(lpvar j);
+        mpq get_gomory_score(lpvar j);
     public:
         lia_move get_gomory_cuts(unsigned num_cuts);
         gomory(int_solver& lia);

@@ -266,7 +266,9 @@ public:
     simplex_strategy_enum simplex_strategy() const { return m_simplex_strategy; }
     simplex_strategy_enum & simplex_strategy()  { return m_simplex_strategy; }
     bool use_tableau_rows() const { return m_simplex_strategy == simplex_strategy_enum::tableau_rows; }
-    
+    bool m_gomory_polarity = true;
+    bool m_gomory_use_big_cuts = true;
+    bool m_gomory_use_closest_int = true;
 #ifdef Z3DEBUG
 static unsigned ddd; // used for debugging    
 #endif
