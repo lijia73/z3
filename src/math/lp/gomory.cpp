@@ -479,7 +479,7 @@ public:
                     return lia_move::conflict;
                 continue;
             }
-            SASSERT(test_row_polarity(lia, row, j) == cc.m_polarity);
+            SASSERT(!lia.settings().m_gomory_polarity || test_row_polarity(lia, row, j) == cc.m_polarity);
             if (cc.m_polarity == row_polarity::MAX) 
                 lra.update_column_type_and_bound(j, lp::lconstraint_kind::LE, floor(lra.get_column_value(j).x), cc.m_dep);
             else if (cc.m_polarity == row_polarity::MIN)
