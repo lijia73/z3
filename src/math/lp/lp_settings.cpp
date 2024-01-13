@@ -35,4 +35,6 @@ void lp::lp_settings::updt_params(params_ref const& _p) {
     m_gomory_polarity = p.arith_gomory_polarity();
     m_gomory_use_big_cuts = p.arith_gomory_use_big_cuts();
     m_gomory_use_closest_int = p.arith_gomory_use_closest_int();
+
+    m_params.g.append(_p);
 }

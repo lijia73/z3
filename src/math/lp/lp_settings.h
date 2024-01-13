@@ -31,6 +31,7 @@ Revision History:
 #include "util/params.h"
 #include "math/lp/lp_utils.h"
 #include "math/lp/lp_types.h"
+#include "smt/params/smt_params_helper.hpp"
 
 namespace lp {
 
@@ -186,8 +187,11 @@ private:
     statistics                m_stats;
     random_gen                m_rand;
 
+    smt_params_helper         m_params;
+
 public:
     void updt_params(params_ref const& p);
+    smt_params_helper const& params() const { return m_params; }
     bool enable_hnf() const { return m_enable_hnf; }
     unsigned nlsat_delay() const { return m_nlsat_delay; }
     bool int_run_gcd_test() const { return m_int_run_gcd_test; }

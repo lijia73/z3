@@ -184,7 +184,7 @@ namespace lp {
         
         lia_move r = lia_move::undef;
 
-        if (m_gcd.should_apply())
+        if (settings().params().arith_enable_gcd() && m_gcd.should_apply())
             r = m_gcd();
 
         check_return_helper pc(lra);
