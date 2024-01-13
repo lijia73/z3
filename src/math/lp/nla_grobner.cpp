@@ -111,6 +111,8 @@ namespace nla {
     }
 
     bool grobner::propagate_eqs() {
+        if (!c().params().arith_nl_grobner_propagate_eqs())
+            return false;
         unsigned changed = 0;
         for (auto eq : m_solver.equations()) 
             if (propagate_fixed(*eq) && ++changed >= m_solver.number_of_conflicts_to_report())
@@ -119,6 +121,8 @@ namespace nla {
     }
 
     bool grobner::propagate_factorization() {
+        if (!c().params().arith_nl_grobner_factorization())
+            return false;
         unsigned changed = 0;
         for (auto eq : m_solver.equations()) 
             if (propagate_factorization(*eq) && ++changed >= m_solver.number_of_conflicts_to_report())
@@ -362,6 +366,8 @@ namespace nla {
     }
 
     bool grobner::propagate_linear_equations() {
+        if (!c().params().arith_nl_grobner_propagate_linear())
+            return false;
         unsigned changed = 0;
         m_mon2var.clear();
         for (auto const& m : c().emons()) 

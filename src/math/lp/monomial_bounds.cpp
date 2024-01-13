@@ -19,6 +19,8 @@ namespace nla {
         dep(c->m_intervals.get_dep_intervals()) {}
 
     void monomial_bounds::propagate() {
+        if (!c().params().arith_nl_propagate_monomial_bounds())
+            return;
         for (lpvar v : c().m_to_refine) {
             propagate(c().emon(v));
             if (add_lemma()) 

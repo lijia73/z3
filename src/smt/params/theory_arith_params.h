@@ -103,6 +103,7 @@ struct theory_arith_params {
     unsigned                m_nl_arith_gb_threshold = 512;
     bool                    m_nl_arith_gb_eqs = false;
     bool                    m_nl_arith_gb_perturbate = true;
+    bool                    m_nl_arith_grobner_propagate_eqs = true;
     unsigned                m_nl_arith_max_degree = 6;
     bool                    m_nl_arith_branching = true;
     unsigned                m_nl_arith_rounds = 1024;

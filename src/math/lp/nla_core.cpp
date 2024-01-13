@@ -1416,6 +1416,8 @@ void core::patch_monomial(lpvar j) {
 }
 
 void core::patch_monomials_on_to_refine() {
+    if (!params().arith_nl_patch_monomials())
+        return;
     // the rest of the function might change m_to_refine, so have to copy
     unsigned_vector to_refine;
     for (unsigned j : m_to_refine) 
@@ -1576,16 +1578,16 @@ lbool core::check() {
     if (no_effect() && should_run_bounded_nlsat()) 
         ret = bounded_nlsat();
                 
-    if (no_effect()) 
+    if (no_effect() && params().arith_nl_incremental_linearization()) 
         m_basics.basic_lemma(true); 
 
-    if (no_effect()) 
+    if (no_effect() && params().arith_nl_incremental_linearization()) 
         m_basics.basic_lemma(false);
 
     if (no_effect()) 
         m_divisions.check();    
 
-    if (no_effect()) {
+    if (no_effect() && params().arith_nl_incremental_linearization()) {
         std::function<void(void)> check1 = [&]() { m_order.order_lemma(); };
         std::function<void(void)> check2 = [&]() { m_monotone.monotonicity_lemma(); };
         std::function<void(void)> check3 = [&]() { m_tangents.tangent_lemma(); };
@@ -1619,6 +1621,8 @@ lbool core::check() {
 
 bool core::should_run_bounded_nlsat() {
     if (!params().arith_nl_nra())
+        return false;
+    if (!params().arith_nl_bounded_nra())
         return false;
     if (m_nlsat_delay > 0) 
         --m_nlsat_delay;
