@@ -1584,7 +1584,7 @@ lbool core::check() {
     if (no_effect() && params().arith_nl_incremental_linearization()) 
         m_basics.basic_lemma(false);
 
-    if (no_effect()) 
+    if (no_effect() && params().arith_nl_divisions_check()) 
         m_divisions.check();    
 
     if (no_effect() && params().arith_nl_incremental_linearization()) {
@@ -1792,6 +1792,8 @@ void core::set_use_nra_model(bool m) {
 }
     
 void core::propagate() {
+    if (!params().arith_nl_propagate())
+        return;
 #if Z3DEBUG
     flet f(lra.validate_blocker(), true);
 #endif
