@@ -30,8 +30,8 @@ namespace lp {
         lia_move cut(lar_term & t, mpq & k, explanation* ex, unsigned basic_inf_int_j, const row_strip<mpq>& row);
         unsigned_vector gomory_select_int_infeasible_vars(unsigned num_cuts);
         bool is_gomory_cut_target(lpvar j); 
-        lia_move get_cut(lpvar j);
         mpq get_gomory_score(lpvar j);
+        u_dependency* gomory::add_deps(u_dependency* dep,  const row_strip<mpq>& row, lpvar basic_var);
     public:
         lia_move get_gomory_cuts(unsigned num_cuts);
         gomory(int_solver& lia);
