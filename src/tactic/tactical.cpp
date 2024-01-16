@@ -1068,6 +1068,32 @@ tactic * try_for(tactic * t, unsigned msecs) {
     return alloc(try_for_tactical, t, msecs);
 }
 
+
+
+class try_rlimit_for_tactical : public unary_tactical {
+    unsigned m_limit;
+public:
+    try_rlimit_for_tactical(tactic * t, unsigned lim):unary_tactical(t), m_limit(lim) {}
+
+    char const* name() const override { return "try_rlimit_for"; }
+    
+    void operator()(goal_ref const & in, goal_ref_buffer& result) override {
+        scoped_rlimit _scoped(in->m().limit(), m_limit);
+        m_t->operator()(in, result);                    
+    }
+
+    tactic * translate(ast_manager & m) override { 
+        tactic * new_t = m_t->translate(m);
+        return alloc(try_rlimit_for_tactical, new_t, m_limit);
+    }
+};
+
+tactic * try_rlimit_for(tactic * t, unsigned limit) {
+    return alloc(try_rlimit_for_tactical, t, limit);
+}
+
+
+
 class using_params_tactical : public unary_tactical {
     params_ref m_params;
 public:

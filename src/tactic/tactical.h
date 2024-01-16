@@ -60,6 +60,7 @@ tactic * par_and_then(unsigned num, tactic * const * ts);
 tactic * par_and_then(tactic * t1, tactic * t2);
 
 tactic * try_for(tactic * t, unsigned msecs);
+tactic * try_rlimit_for(tactic * t, unsigned limit);
 tactic * clean(tactic * t);
 tactic * using_params(tactic * t, params_ref const & p);
 tactic * annotate_tactic(char const* name, tactic * t);

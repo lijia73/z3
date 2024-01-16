@@ -31,6 +31,7 @@ Notes:
 #include "tactic/core/cofactor_term_ite_tactic.h"
 #include "tactic/smtlogics/smt_tactic.h"
 #include "nlsat/tactic/qfnra_nlsat_tactic.h"
+#include "params/tactic_params.hpp"
 
 static tactic * mk_qfnia_bv_solver(ast_manager & m, params_ref const & p_ref) {
     params_ref p = p_ref;
@@ -113,11 +114,13 @@ static tactic * mk_qfnia_smt_solver(ast_manager& m, params_ref const& p) {
 }
 
 tactic * mk_qfnia_tactic(ast_manager & m, params_ref const & p) {
+    tactic_params _p(p);
+    auto lim = _p.nia_tactic_rlimit();
     return and_then(
         mk_report_verbose_tactic("(qfnia-tactic)", 10),
         mk_qfnia_preamble(m, p),
         or_else(mk_qfnia_sat_solver(m, p),
-                try_for(mk_qfnia_smt_solver(m, p), 2000),
+                lim ? try_rlimit_for(mk_qfnia_smt_solver(m, p), lim) : try_for(mk_qfnia_smt_solver(m, p), 2000),
                 mk_qfnia_nlsat_solver(m, p),        
                 mk_qfnia_smt_solver(m, p)));
 }
