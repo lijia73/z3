@@ -1577,12 +1577,6 @@ namespace lp {
         }
     }
 
-
-    var_index lar_solver::add_term_undecided(const vector<std::pair<mpq, var_index>>& coeffs) {
-        push_term(new lar_term(coeffs));
-        return tv::mask_term(m_terms.size() - 1);
-    }
-
 #if Z3DEBUG_CHECK_UNIQUE_TERMS
     bool lar_solver::term_coeffs_are_ok(const vector<std::pair<mpq, var_index>>& coeffs) {
 
@@ -1641,13 +1635,13 @@ namespace lp {
     var_index lar_solver::add_term(const vector<std::pair<mpq, var_index>>& coeffs, unsigned ext_i) {
         TRACE("lar_solver_terms", print_linear_combination_of_column_indices_only(coeffs, tout) << ", ext_i =" << ext_i << "\n";);
         SASSERT(!m_var_register.external_is_used(ext_i));
-        m_term_register.add_var(ext_i, term_is_int(coeffs));
-        lp_assert(all_vars_are_registered(coeffs));
-        if (strategy_is_undecided())
-            return add_term_undecided(coeffs);
+        SASSERT(all_vars_are_registered(coeffs));
         lar_term* t = new lar_term(coeffs);
         subst_known_terms(t);
+        m_term_register.add_var(ext_i, term_is_int(t));
         push_term(t);
+        if (strategy_is_undecided())
+            return tv::mask_term(m_terms.size() - 1);
         SASSERT(m_terms.size() == m_term_register.size());
         unsigned adjusted_term_index = m_terms.size() - 1;
         var_index ret = tv::mask_term(adjusted_term_index);
@@ -1938,10 +1932,11 @@ namespace lp {
                     tout << std::endl;
                 }
             });
+        mpq rs = adjust_bound_for_int(j, kind, right_side);
         if (column_has_upper_bound(j))
-            update_column_type_and_bound_with_ub(j, kind, right_side, dep);
+            update_column_type_and_bound_with_ub(j, kind, rs, dep);
         else
-            update_column_type_and_bound_with_no_ub(j, kind, right_side, dep);
+            update_column_type_and_bound_with_no_ub(j, kind, rs, dep);
 
         if (is_base(j) && column_is_fixed(j))
             m_fixed_base_var_set.insert(j);
