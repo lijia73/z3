@@ -1792,12 +1792,12 @@ void core::set_use_nra_model(bool m) {
 }
     
 void core::propagate() {
-    if (!params().arith_nl_propagate())
-        return;
 #if Z3DEBUG
     flet f(lra.validate_blocker(), true);
 #endif
     clear();
+    if (!params().arith_nl_propagate())
+        return;
     m_monomial_bounds.unit_propagate();
     m_monics_with_changed_bounds.reset();
 }
