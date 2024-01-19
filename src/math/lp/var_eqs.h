@@ -78,10 +78,12 @@ class var_eqs {
     mutable bool_vector             m_marked;
     mutable unsigned_vector           m_marked_trail;
     mutable svector<eq_justification> m_justtrail;
+    smt_params_helper         m_params;
         
     mutable stats m_stats;
 public:    
-    var_eqs(): m_merge_handler(nullptr), m_uf(*this), m_stack() {}    
+    var_eqs(const smt_params_helper & params): m_merge_handler(nullptr), m_uf(*this), m_stack(), m_params(params) {}    
+    
     /**
        \brief push a scope    */
     void push() {
@@ -156,6 +158,7 @@ public:
     }
 
     bool vars_are_equiv(lpvar j, lpvar k) const {
+        if (!m_params.arith_nl_monic_eq()) return j == k;
         signed_var sj = find(signed_var(j, false));
         signed_var sk = find(signed_var(k, false));
         return sj.var() == sk.var();

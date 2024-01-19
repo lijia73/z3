@@ -22,7 +22,7 @@ using namespace nla;
 typedef lp::lar_term term;
 
 core::core(lp::lar_solver& s, params_ref const& p, reslimit & lim) :
-    m_evars(),
+    m_evars(p),
     lra(s),
     m_reslim(lim),
     m_params(p),
