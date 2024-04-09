@@ -667,11 +667,9 @@ namespace nlsat {
             interval_set_ref result(m_ism);
             scoped_anum t(m_am);
             auto floor = [&](const anum& r_i) {
-                return r_i;
                 return get_floor(a, r_i, t)? t: r_i;
             };
             auto ceil = [&](const anum& r_i) {
-                return r_i;
                 return get_ceil(a, r_i, t)? t: r_i;
             };
             // We look for infeasible intervals in the compliment of the feasible intervals.
