@@ -676,6 +676,8 @@ namespace nlsat {
             };
             // We look for infeasible intervals in the compliment of the feasible intervals.
             // For the integral case of non-strict inequalities we enlarge them by using floor and ceil.
+            // For example, if x <= 1.3 and x is integral, we can conclude that x <= 1.
+            // From the other side, if x < 1.3 then x < 1 is too strong.
             if (i > roots.size()) {
                 // p does not have sufficient roots
                 // atom is false by definition
