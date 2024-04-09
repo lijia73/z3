@@ -33,6 +33,41 @@ namespace nlsat {
         scoped_anum_vector       m_add_roots_tmp;
         scoped_anum_vector       m_inf_tmp;
         
+        bool get_floor(atom* a, anum const& v, anum& r) {
+            if (!m_solver.is_int(a->max_var()) || m_am.is_int(v))
+                return false;
+            TRACE("algebraic", tout << "v: as root = "; m_am.display_root(tout, v) << ", as interval="; m_am.display_interval(tout, v) << std::endl;);
+            m_am.int_lt(v, r);
+            SASSERT(m_am.lt(r, v));
+            TRACE("algebraic", tout << "r = int_lt(v):"; m_am.display_root(tout, r) <<", as interval="; m_am.display_interval(tout, r) << std::endl;);
+            m_am.add(r, 1, r);
+            TRACE("algebraic", tout << "r+1:"; m_am.display_root(tout, r) <<", as interval="; m_am.display_interval(tout, r) << std::endl;);
+            if (m_am.lt(r, v)) {
+                return true;
+            }
+            TRACE("algebraic", tout << "r is not less than v" << std::endl;);
+
+            return false;
+        }
+
+        bool get_ceil(atom* a, anum const& v, anum& r) {
+            if (!m_solver.is_int(a->max_var())||m_am.is_int(v))
+                return false;
+            TRACE("algebraic", tout << "r = int_lt(v, r):"; m_am.display_root(tout, r) <<", as interval="; 
+                m_am.display_interval(tout, v) << std::endl;);
+            m_am.int_gt(v, r);
+            SASSERT(m_am.gt(r, v));
+            TRACE("algebraic", tout << "r = int_gt(v, r):"; m_am.display_root(tout, r) <<", as interval=";
+                   m_am.display_interval(tout, r) << std::endl;);
+            m_am.add(r, -1, r);            
+            if (m_am.lt(v, r)){
+                return true;
+            }
+            TRACE("algebraic", tout << "v is not less than r" << std::endl;);
+
+            return false;
+        }
+
         // sign tables: light version
         struct sign_table {
             anum_manager &     m_am;
@@ -596,6 +631,29 @@ namespace nlsat {
 
         interval_set_ref infeasible_intervals(root_atom * a, bool neg, clause const* cls) {
             atom::kind k = a->get_kind();
+
+            if (neg) {
+                switch (k)
+                {
+                case atom::ROOT_EQ:
+                    break;
+                case atom::ROOT_LT:
+                    k = atom::ROOT_GE;
+                    break;
+                case atom::ROOT_GT:
+                    k = atom::ROOT_LE;
+                    break;
+                case atom::ROOT_LE:
+                    k = atom::ROOT_GT;
+                    break;
+                case atom::ROOT_GE:
+                    k = atom::ROOT_LT;
+                    break;              
+                default:
+                    NOT_IMPLEMENTED_YET();
+                }
+            }
+
             unsigned i = a->i();
             SASSERT(i > 0);
             literal jst(a->bvar(), neg);
@@ -607,9 +665,19 @@ namespace nlsat {
             // even when the maximal variable is assigned. I need this feature to minimize conflict cores.
             m_am.isolate_roots(polynomial_ref(a->p(), m_pm), undef_var_assignment(m_assignment, x), roots);
             interval_set_ref result(m_ism);
-
+            scoped_anum t(m_am);
+            auto floor = [&](const anum& r_i) {
+                return r_i;
+                return get_floor(a, r_i, t)? t: r_i;
+            };
+            auto ceil = [&](const anum& r_i) {
+                return r_i;
+                return get_ceil(a, r_i, t)? t: r_i;
+            };
+            // We look for infeasible intervals in the compliment of the feasible intervals.
+            // For the integral case of non-strict inequalities we enlarge them by using floor and ceil.
             if (i > roots.size()) {
-                // p does have sufficient roots
+                // p does not have sufficient roots
                 // atom is false by definition
                 if (neg) {
                     result = m_ism.mk_empty(); 
@@ -632,29 +700,17 @@ namespace nlsat {
                         result = m_ism.mk_union(s1, s2);
                     }
                     break;
-                case atom::ROOT_LT:
-                    if (neg)
-                        result = m_ism.mk(true, true, dummy, true, false, r_i, jst, cls); // (-oo, r_i)
-                    else
-                        result = m_ism.mk(false, false, r_i, true, true, dummy, jst, cls); // [r_i, oo)
+                case atom::ROOT_LT:  // [r_i, oo)
+                    result = m_ism.mk(false, false, r_i, true, true, dummy, jst, cls);
                     break;
-                case atom::ROOT_GT:
-                    if (neg) 
-                        result = m_ism.mk(true, false, r_i, true, true, dummy, jst, cls); // (r_i, oo)
-                    else
-                        result = m_ism.mk(true, true, dummy, false, false, r_i, jst, cls); // (-oo, r_i]
+                case atom::ROOT_GT:  // (-oo, r_i]
+                    result = m_ism.mk(true, true, dummy, false, false, r_i, jst, cls); 
                     break;
-                case atom::ROOT_LE:
-                    if (neg)
-                        result = m_ism.mk(true, true, dummy, false, false, r_i, jst, cls); // (-oo, r_i]
-                    else
-                        result = m_ism.mk(true, false, r_i, true, true, dummy, jst, cls); // (r_i, oo)
+                case atom::ROOT_LE: // (r_i, oo)
+                    result = m_ism.mk(true, false, floor(r_i), true, true, dummy, jst, cls); 
                     break;
-                case atom::ROOT_GE:
-                    if (neg) 
-                        result = m_ism.mk(false, false, r_i, true, true, dummy, jst, cls); // [r_i, oo)
-                    else
-                        result = m_ism.mk(true, true, dummy, true, false, r_i, jst, cls); // (-oo, r_i)
+                case atom::ROOT_GE: // (-oo, r_i) 
+                    result = m_ism.mk(true, true, dummy, true, false , ceil(r_i), jst, cls); 
                     break;
                 default:
                     UNREACHABLE();
