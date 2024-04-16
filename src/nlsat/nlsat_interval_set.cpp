@@ -721,12 +721,17 @@ namespace nlsat {
                 return;
         }
         
-        // Try to find a gap that is not an unit.
+        // Try to find a gap that is not a unit.
         for (unsigned i = 1; i < num; i++) {
             if (m_am.lt(s->m_intervals[i-1].m_upper, s->m_intervals[i].m_lower)) {
                 n++;
-                if (n == 1 || m_rand()%n == 0)
+                if (s->m_intervals[i-1].m_upper_open && m_am.is_rational(s->m_intervals[i-1].m_upper)) {
+                    m_am.set(w, s->m_intervals[i-1].m_upper);
+                } else if (s->m_intervals[i].m_lower_open && m_am.is_rational(s->m_intervals[i].m_lower)) {
+                    m_am.set(w, s->m_intervals[i].m_lower);
+                } else if (n == 1 || m_rand()%n == 0) {
                     m_am.select(s->m_intervals[i-1].m_upper, s->m_intervals[i].m_lower, w);
+                }
                 if (!randomize)
                     return;
             }

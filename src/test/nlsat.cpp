@@ -718,6 +718,16 @@ static void tst10() {
 }
 
 static void tst11() {
+    enable_trace("nlsat"); 
+    enable_trace("nlsat_root");
+    enable_trace("nlsat_verbose");
+    enable_trace("nlsat_evaluator");
+    enable_trace("nlsat_assign");
+    enable_trace("nlsat_inf_set");
+    enable_trace("nlsat_resolve");
+    enable_trace("nlsat_project");
+    enable_trace("nlsat_explain");
+    enable_trace("algebraic_select");
     params_ref      ps;
     reslimit        rlim;
     nlsat::solver s(rlim, ps, false);
@@ -725,71 +735,54 @@ static void tst11() {
     nlsat::pmanager & pm  = s.pm();
     nlsat::assignment as(am);
     nlsat::explain& ex    = s.get_explain();
-    nlsat::var x, y, z;
-    y = s.mk_var(false);
-    z = s.mk_var(false);
-    x = s.mk_var(false);
-    polynomial_ref p1(pm), p2(pm), _x(pm), _y(pm), _z(pm);
-    _x = pm.mk_polynomial(x);
-    _y = pm.mk_polynomial(y);
-    _z = pm.mk_polynomial(z);
-
+    nlsat::var x0, x1;
+    x0 = s.mk_var(true);
+    x1 = s.mk_var(true);
+    polynomial_ref p1(pm), p2(pm), _x0(pm), _x1(pm);
+    _x0 = pm.mk_polynomial(x0);
+    _x1 = pm.mk_polynomial(x1);
+    
+    
     nlsat::scoped_literal_vector lits(s);
-    scoped_anum zero(am), one(am), five(am);
-    am.set(zero, 0);
-    am.set(one, 1);
-    am.set(five, 5);
-    as.set(z, zero);
-    as.set(y, five);
-    as.set(x, five);
+    scoped_anum ten(am), hundred(am), hundred_and_one(am);
+    // 10x1 - x0*x0  > 0
+    // 100x1 + 10x0*x0 - 101 < 0
+    am.set(ten, 10);
+    am.set(hundred, 100);
+    am.set(hundred_and_one, 101);
     s.set_rvalues(as);
-
-    p1 = (_x - _y);
-    p2 = ((_x*_x) - (_x*_y) - _z);
+    p1 = 10*_x1 - _x0*_x0;
+    p2 = 100*_x1 + 10*_x0*_x0 - 101;    
+    std::cout << "p1 = "; pm.display(std::cout, p1); std::cout << std::endl;
+    std::cout << "p2 = "; pm.display(std::cout, p2); std::cout << std::endl;
     lits.reset();
-    lits.push_back(mk_gt(s, p1));
-    lits.push_back(mk_eq(s, p2));
-    project_fa(s, ex, x, 2, lits.data());
-//    return;
 
-    p1 = ((_x * _x) - (2 * _y * _x)  - _z + (_y *_y));
-    p2 = _x + _y;
-    as.set(_x, one);
-    as.set(_y, zero);
-    as.set(_z, one);
-    lits.reset();
-    lits.push_back(mk_lt(s, p1));
-    lits.push_back(mk_eq(s, p2));
-    project_fa(s, ex, x, 2, lits.data());
-    return;
+     lits.push_back(mk_gt(s, p1));
+     lits.push_back(mk_lt(s, p2));
+     nlsat::literal_vector litsv(lits.size(), lits.data());
+     lbool result = s.check(litsv);
+     VERIFY(result == l_true);
+     for (unsigned i = 0; i < 2; i++) {
+        auto val = s.value(i);
+        std::cout << "x" << i<<" = " ; am.display(std::cout, val) << std::endl;
+     }
 
-    as.set(z, zero);
-    as.set(y, five);
-    as.set(x, five);    
-    p1 = (_x - _y);
-    p2 = ((_x*_x) - (_x*_y));
-    lits.reset();
-    lits.push_back(mk_gt(s, p1));
-    lits.push_back(mk_eq(s, p2));
-    project_fa(s, ex, x, 2, lits.data());
+// #if 0
 
-#if 0
+// !(x5^4 - 2 x3^2 x5^2 - 2 x1^2 x5^2 + 4 x0 x1 x5^2 - 2 x0^2 x5^2 + x3^4 - 2 x1^2 x3^2 + 4 x0 x1 x3^2 - 2 x0^2 x3^2 + x1^4 - 4 x0 x1^3 + 6 x0^2 x1^2 - 4 x0^3 x1 + x0^4 = 0) or !(x5 < 0) or !(x4 > root[1](x1 x4 - x0 x4 + x3)) or !(x3 + x1 - x0 > 0) or !(x1 - x0 < 0) or !(x7 > root[1](x1^2 x7 - 2 x0 x1 x7 + x0^2 x7 + x1 x3 - x0 x3)) or x7 - x4 = 0 or !(x1 x3 x7^2 - x0 x3 x7^2 - x5^2 x7 + x3^2 x7 + x1^2 x7 - 2 x0 x1 x7 + x0^2 x7 + x1 x3 - x0 x3 = 0)
 
-!(x5^4 - 2 x3^2 x5^2 - 2 x1^2 x5^2 + 4 x0 x1 x5^2 - 2 x0^2 x5^2 + x3^4 - 2 x1^2 x3^2 + 4 x0 x1 x3^2 - 2 x0^2 x3^2 + x1^4 - 4 x0 x1^3 + 6 x0^2 x1^2 - 4 x0^3 x1 + x0^4 = 0) or !(x5 < 0) or !(x4 > root[1](x1 x4 - x0 x4 + x3)) or !(x3 + x1 - x0 > 0) or !(x1 - x0 < 0) or !(x7 > root[1](x1^2 x7 - 2 x0 x1 x7 + x0^2 x7 + x1 x3 - x0 x3)) or x7 - x4 = 0 or !(x1 x3 x7^2 - x0 x3 x7^2 - x5^2 x7 + x3^2 x7 + x1^2 x7 - 2 x0 x1 x7 + x0^2 x7 + x1 x3 - x0 x3 = 0)
+// x0 := -1
+// x1 := -21.25
+// x2 := 0.0470588235?
+// x3 := 2
+// x4 := -0.03125
+// x5 := -18.25
+// x6 := -0.5
+// x7 := 1
 
-x0 := -1
-x1 := -21.25
-x2 := 0.0470588235?
-x3 := 2
-x4 := -0.03125
-x5 := -18.25
-x6 := -0.5
-x7 := 1
-
-#endif
+// #endif
 
 }
-
 void tst_nlsat() {
     tst11();
     std::cout << "------------------\n";
