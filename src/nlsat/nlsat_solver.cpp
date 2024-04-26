@@ -1500,6 +1500,62 @@ namespace nlsat {
             }
         }
 
+        lbool continued_search(bool &exit_request) {
+            CASSERT("nlsat", check_satisfied());
+            exit_request = false;
+            if (m_xk == null_var) {
+                peek_next_bool_var();
+                if (m_bk == null_bool_var) 
+                    new_stage(); // move to arith vars
+            }
+            else {
+                new_stage(); // peek next arith var
+            }
+            TRACE("nlsat_bug", tout << "xk: x" << m_xk << " bk: b" << m_bk << "\n";);
+            if (is_satisfied()) {
+                exit_request = true;
+                return l_true;
+            }
+            while (true) {
+                TRACE("nlsat_verbose", tout << "processing variable "; 
+                      if (m_xk != null_var) {
+                          m_display_var(tout, m_xk); tout << " " << m_watches[m_xk].size();
+                      }
+                      else {
+                          tout << m_bwatches[m_bk].size() << " boolean b" << m_bk;
+                      }
+                      tout << "\n";);
+                checkpoint();
+                clause * conflict_clause;
+                if (m_xk == null_var)
+                    conflict_clause = process_clauses(m_bwatches[m_bk]);
+                else 
+                    conflict_clause = process_clauses(m_watches[m_xk]);
+                if (conflict_clause == nullptr)
+                    break;
+                if (!resolve(*conflict_clause)) {
+                    exit_request = true;
+                    return l_false;
+                }
+                if (m_conflicts >= m_max_conflicts) {
+                    exit_request = true;
+                    return l_undef;
+                }
+                log();
+            }
+               
+            if (m_xk == null_var) {
+                if (m_bvalues[m_bk] == l_undef) {
+                    decide(literal(m_bk, true));
+                    m_bk++;
+                }
+            }
+            else {
+                select_witness();
+            }
+            SASSERT(exit_request == false);
+            return l_true; // does not matter
+        }
 
         /**
            \brief main procedure
@@ -1516,52 +1572,10 @@ namespace nlsat {
             m_next_conflict = 100;
 
             while (true) {
-                CASSERT("nlsat", check_satisfied());
-                if (m_xk == null_var) {
-                    peek_next_bool_var();
-                    if (m_bk == null_bool_var) 
-                        new_stage(); // move to arith vars
-                }
-                else {
-                    new_stage(); // peek next arith var
-                }
-                TRACE("nlsat_bug", tout << "xk: x" << m_xk << " bk: b" << m_bk << "\n";);
-                if (is_satisfied()) {
-                    return l_true;
-                }
-                while (true) {
-                    TRACE("nlsat_verbose", tout << "processing variable "; 
-                          if (m_xk != null_var) {
-                              m_display_var(tout, m_xk); tout << " " << m_watches[m_xk].size();
-                          }
-                          else {
-                              tout << m_bwatches[m_bk].size() << " boolean b" << m_bk;
-                          }
-                          tout << "\n";);
-                    checkpoint();
-                    clause * conflict_clause;
-                    if (m_xk == null_var)
-                        conflict_clause = process_clauses(m_bwatches[m_bk]);
-                    else 
-                        conflict_clause = process_clauses(m_watches[m_xk]);
-                    if (conflict_clause == nullptr)
-                        break;
-                    if (!resolve(*conflict_clause)) 
-                        return l_false;                    
-                    if (m_conflicts >= m_max_conflicts)
-                        return l_undef;
-                    log();
-                }
-               
-                if (m_xk == null_var) {
-                    if (m_bvalues[m_bk] == l_undef) {
-                        decide(literal(m_bk, true));
-                        m_bk++;
-                    }
-                }
-                else {
-                    select_witness();
-                }
+                bool exit_request;
+                lbool r = continued_search(exit_request);
+                if (exit_request)
+                    return r;
             }
         }
 
