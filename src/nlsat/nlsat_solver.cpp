@@ -1566,8 +1566,6 @@ namespace nlsat {
             TRACE("nlsat_proof_sk", tout << "ASSERTED\n"; display_abst(tout);); 
             TRACE("nlsat_mathematica", display_mathematica(tout););
             TRACE("nlsat", display_smt2(tout););
-            m_bk = 0;
-            m_xk = null_var;
             m_conflicts = 0;
             m_next_conflict = 100;
 
@@ -1589,14 +1587,18 @@ namespace nlsat {
 
 
         lbool search_check() {
-            lbool r = l_undef;
+            lbool r;
+            m_bk = 0;
+            m_xk = null_var;
+
             while (true) {
                 r = search();
                 if (r != l_true) break; 
                 vector<std::pair<var, rational>> bounds;                
-
+                var first_x = null_var;
                 for (var x = 0; x < num_vars(); x++) {
                     if (is_int(x) && m_assignment.is_assigned(x) && !m_am.is_int(m_assignment.value(x))) {
+                        if (first_x == null_var) first_x = x;
                         scoped_anum v(m_am), vlo(m_am);
                         v = m_assignment.value(x);
                         rational lo;
@@ -1613,8 +1615,11 @@ namespace nlsat {
                     }
                 }
                 if (bounds.empty()) break;
-
-                init_search();                
+                auto rg = random_gen(++m_random_seed);
+                
+                var rand_x = rg() % first_x;         
+                undo_until_level(rand_x);
+                // init_search();   
                 for (auto const& b : bounds) {
                     var x = b.first;
                     rational lo = b.second;
