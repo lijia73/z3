@@ -34,7 +34,8 @@ namespace nlsat {
         scoped_anum_vector       m_inf_tmp;
         
         bool get_floor(atom* a, anum const& v, anum& r) {
-            SASSERT(m_solver.is_int(a->max_var()) && ! m_am.is_int(v));
+            if (!m_solver.is_int(a->max_var()) || m_am.is_int(v))
+                return false;
             TRACE("algebraic", tout << "v: as root = "; m_am.display_root(tout, v) << ", as interval="; m_am.display_interval(tout, v) << std::endl;);
             m_am.int_lt(v, r);
             SASSERT(m_am.lt(r, v));
@@ -45,20 +46,25 @@ namespace nlsat {
                 return true;
             }
             TRACE("algebraic", tout << "r is not less than v" << std::endl;);
+
             return false;
         }
 
         bool get_ceil(atom* a, anum const& v, anum& r) {
-            SASSERT (m_solver.is_int(a->max_var())|| !m_am.is_int(v));
+            if (!m_solver.is_int(a->max_var())||m_am.is_int(v))
+                return false;
+            TRACE("algebraic", tout << "r = int_lt(v, r):"; m_am.display_root(tout, r) <<", as interval="; 
+                m_am.display_interval(tout, v) << std::endl;);
             m_am.int_gt(v, r);
-            TRACE("algebraic", tout << "r = int_gt(v, r):"; m_am.display_root(tout, r) <<", as interval="; 
-                m_am.display_interval(tout, r) << std::endl;);
             SASSERT(m_am.gt(r, v));
-            m_am.add(r, -1, r);
+            TRACE("algebraic", tout << "r = int_gt(v, r):"; m_am.display_root(tout, r) <<", as interval=";
+                   m_am.display_interval(tout, r) << std::endl;);
+            m_am.add(r, -1, r);            
             if (m_am.lt(v, r)){
                 return true;
             }
             TRACE("algebraic", tout << "v is not less than r" << std::endl;);
+
             return false;
         }
 
@@ -619,14 +625,14 @@ namespace nlsat {
                     } 
                 }
             }
-            TRACE("nlsat_evaluator", tout << "interval_set: " << result << "\n";);
+            TRACE("nlsat_evaluator", tout << "interval_set for x"<< x <<": " << result << "\n";);
             return result;
         }
 
         interval_set_ref infeasible_intervals(root_atom * a, bool neg, clause const* cls) {
             atom::kind k = a->get_kind();
-
-            if (neg) {                
+            
+            if (neg) {
                 switch (k)
                 {
                 case atom::ROOT_EQ:
@@ -644,7 +650,7 @@ namespace nlsat {
                     k = atom::ROOT_LT;
                     break;              
                 default:
-                    NOT_IMPLEMENTED_YET();
+                    UNREACHABLE();
                 }
             }
 
@@ -682,7 +688,8 @@ namespace nlsat {
             }
             else {
                 anum const & r_i = roots[i-1];
-                bool use_floor_ceil = m_solver.is_int(a->max_var()) && !m_am.is_int(r_i);
+                CTRACE("nlsat_interval_bug", x == 6,  tout << "k = " << k << "\n";);
+                bool use_floor_ceil;
                 switch (k) {
                 case atom::ROOT_EQ:
                     if (neg) {
@@ -696,27 +703,31 @@ namespace nlsat {
                     }
                     break;
                 case atom::ROOT_LT:  
-                    if (use_floor_ceil) result = m_ism.mk(false, false, ceil(r_i), true, true, dummy, jst, cls); // [ceil(r_i), oo)
-                    else result = m_ism.mk(false, false, r_i, true, true, dummy, jst, cls); // [r_i, oo)
+                    use_floor_ceil = true && m_solver.is_int(a->max_var()) && !m_am.is_int(r_i);
+                    if (use_floor_ceil)  // we can change the feasible interval to (-oo, floor(r_i)], then the compliment is (floor(r_i), oo)
+                        result = m_ism.mk(true, false, floor(r_i), true, true, dummy, jst, cls); // (floor(r_i), oo)
+                    else     
+                        result = m_ism.mk(false, false, r_i, true, true, dummy, jst, cls); // [r_i, oo)
                     break;
                 case atom::ROOT_GT:
-                    if (use_floor_ceil) result = m_ism.mk(true, true, dummy, false, false, floor(r_i), jst, cls); // (-oo, floor(r_i)]
-                    else result = m_ism.mk(true, true, dummy, false, false, r_i, jst, cls);  // (-oo, r_i]
+                    use_floor_ceil = true && m_solver.is_int(a->max_var()) && !m_am.is_int(r_i);
+                    if (use_floor_ceil) // we can change the feasible interval to [ceil(r_i), oo), then the compliment is (-oo, ceil(r_i) )
+                        result = m_ism.mk(true, true, dummy, true, false, ceil(r_i), jst, cls);
+                    else                       
+                        result = m_ism.mk(true, true, dummy, false, false, r_i, jst, cls);  // (-oo, r_i]
                     break;
                 case atom::ROOT_LE: // (r_i, oo)
-                    if (use_floor_ceil) result = m_ism.mk(false, false, ceil(r_i), true, true, dummy, jst, cls);
-                    else result = m_ism.mk(true, false, r_i, true, true, dummy, jst, cls);
+                    result = m_ism.mk(true, false, floor(r_i), true, true, dummy, jst, cls); 
                     break;
-                case atom::ROOT_GE: // (-oo, r_i)
-                    if (use_floor_ceil) result = m_ism.mk(true, true, dummy, false, false, floor(r_i), jst, cls); //(-oo, floor(r_i)]
-                    else result = m_ism.mk(true, true, dummy, true, false , r_i, jst, cls);
+                case atom::ROOT_GE: // (-oo, r_i) 
+                    result = m_ism.mk(true, true, dummy, true, false , ceil(r_i), jst, cls); 
                     break;
                 default:
                     UNREACHABLE();
                     break;
                 }
             }
-            TRACE("nlsat_evaluator", tout << "interval_set: " << result << "\n";);
+            TRACE("nlsat_evaluator", tout << "interval_set for x" << x << ": " << result << "\n";);
             return result;
         }
         

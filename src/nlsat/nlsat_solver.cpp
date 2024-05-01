@@ -33,6 +33,7 @@ Revision History:
 #include "nlsat/nlsat_evaluator.h"
 #include "nlsat/nlsat_explain.h"
 #include "nlsat/nlsat_params.hpp"
+#include "math/lp/lp_settings.h"
 
 #define NLSAT_EXTRA_VERBOSE
 
@@ -1196,23 +1197,23 @@ namespace nlsat {
         lbool value(literal l) {
             lbool val = assigned_value(l);
             if (val != l_undef) {            
-                TRACE("nlsat_verbose", display(tout << " assigned value " << val << " for ", l) << "\n";);
+                CTRACE("debnls",  lp::lp_settings::ddd, display(tout << " assigned value " << val << " for ", l) << "\n";);
                 return val;
             }
             bool_var b = l.var();
             atom * a = m_atoms[b];
             if (a == nullptr) {
-                TRACE("nlsat_verbose", display(tout << " no atom for ", l) << "\n";);
+                CTRACE("debnls", lp::lp_settings::ddd, display(tout << " no atom for ", l) << "\n";);
                 return l_undef;
             }
             var max = a->max_var();
             if (!m_assignment.is_assigned(max)) {
-                TRACE("nlsat_verbose", display(tout << " maximal variable not assigned ", l) << "\n";);
+                CTRACE("debnls", lp::lp_settings::ddd,display(tout << " maximal variable not assigned ", l) << "\n";);
                 return l_undef;
             }
             val = to_lbool(m_evaluator.eval(a, l.sign()));
-            TRACE("nlsat_verbose", display(tout << " evaluated value " << val << " for ", l) << "\n";);
-            TRACE("value_bug", tout << "value of: "; display(tout, l); tout << " := " << val << "\n"; 
+            CTRACE("debnls", lp::lp_settings::ddd, display(tout << " evaluated value " << val << " for ", l) << "\n";);
+            CTRACE("debnls", lp::lp_settings::ddd, tout << "value of: "; display(tout, l); tout << " := " << val << "\n"; 
                   tout << "xk: " << m_xk << ", a->max_var(): " << a->max_var() << "\n";
                   display_assignment(tout););            
             return val;
@@ -1345,8 +1346,10 @@ namespace nlsat {
            If satisfy_learned is true, then learned clauses are satisfied even if m_lazy > 0
         */
         bool process_arith_clause(clause const & cls, bool satisfy_learned) {
+            CTRACE("debnls", lp::lp_settings::ddd, display(tout, cls) << "n";);
             if (!satisfy_learned && m_lazy >= 2 && cls.is_learned()) {
                 TRACE("nlsat", tout << "skip learned\n";);
+                CTRACE("debnls", lp::lp_settings::ddd, tout << "exit\n";);
                 return true; // ignore lemmas in super lazy mode
             }
             SASSERT(m_xk == max_var(cls));
@@ -1354,15 +1357,19 @@ namespace nlsat {
             unsigned first_undef = UINT_MAX;         // position of the first undefined literal
             interval_set_ref first_undef_set(m_ism); // infeasible region of the first undefined literal
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
+            CTRACE("debnls", lp::lp_settings::ddd, tout << "xk_set:"; m_ism.display(tout, xk_set); tout << std::endl;);
             SASSERT(!m_ism.is_full(xk_set));
             for (unsigned idx = 0; idx < cls.size(); ++idx) {
                 literal l = cls[idx];
                 checkpoint();
-                if (value(l) == l_false)
+                if (value(l) == l_false) {
+                    CTRACE("debnls", lp::lp_settings::ddd, tout << "value(l) = false\n";);
+            
                     continue;
+                }
                 if (value(l) == l_true)
                     return true;  // could happen if clause is a tautology
-                CTRACE("nlsat", max_var(l) != m_xk || value(l) != l_undef, display(tout); 
+                CTRACE("debnls", lp::lp_settings::ddd, display(tout); 
                        tout << "xk: " << m_xk << ", max_var(l): " << max_var(l) << ", l: "; display(tout, l) << "\n";
                        display(tout, cls) << "\n";);
                 SASSERT(value(l) == l_undef);
@@ -1372,30 +1379,31 @@ namespace nlsat {
                 SASSERT(a != nullptr);
                 interval_set_ref curr_set(m_ism);
                 curr_set = m_evaluator.infeasible_intervals(a, l.sign(), &cls);
-                TRACE("nlsat_inf_set", tout << "infeasible set for literal: "; display(tout, l); tout << "\n"; m_ism.display(tout, curr_set); tout << "\n";
+                CTRACE("debnls", lp::lp_settings::ddd, tout << "infeasible set for literal: "; display(tout, l); tout << "\n"; m_ism.display(tout, curr_set); tout << "\n";
                       display(tout, cls) << "\n";); 
                 if (m_ism.is_empty(curr_set)) {
-                    TRACE("nlsat_inf_set", tout << "infeasible set is empty, found literal\n";);
+                    CTRACE("debnls", lp::lp_settings::ddd, tout << "infeasible set is empty, found literal\n";);
                     R_propagate(l, nullptr);
                     SASSERT(is_satisfied(cls));
                     return true;
                 }
                 if (m_ism.is_full(curr_set)) {
-                    TRACE("nlsat_inf_set", tout << "infeasible set is R, skip literal\n";);
+                    TRACE("debnls", tout << "infeasible set is R, skip literal l:"; display(tout, l) << "\n";);
                     R_propagate(~l, nullptr);
                     continue;
                 }
                 if (m_ism.subset(curr_set, xk_set)) {
-                    TRACE("nlsat_inf_set", tout << "infeasible set is a subset of current set, found literal\n";);
+                    CTRACE("debnls", lp::lp_settings::ddd, tout << "infeasible set is a subset of current set, found literal\n";);
                     R_propagate(l, xk_set);
                     return true;
                 }
                 interval_set_ref tmp(m_ism);
                 tmp = m_ism.mk_union(curr_set, xk_set);
+                CTRACE("debnls", lp::lp_settings::ddd, tout << "tmp:union:";  m_ism.display(tout, tmp) << "\n";);
                 if (m_ism.is_full(tmp)) {
-                    TRACE("nlsat_inf_set", tout << "infeasible set + current set = R, skip literal\n";
-                          display(tout, cls) << "\n";
-                          m_ism.display(tout, tmp); tout << "\n";
+                    TRACE("debnls",  tout << "infeasible set + current set = R, skip literal\n";
+                          display(tout, l) << "\n";
+                          tout << "interval:tmp:" ; m_ism.display(tout, tmp); tout << "\n";
                           );
                     R_propagate(~l, tmp, false);
                     continue;
@@ -1406,9 +1414,11 @@ namespace nlsat {
                     first_undef_set = curr_set;
                 }
             }
-            TRACE("nlsat_inf_set", tout << "num_undef: " << num_undef << "\n";);
-            if (num_undef == 0) 
+            CTRACE("debnls", lp::lp_settings::ddd, tout << "num_undef: " << num_undef << "\n";);
+            if (num_undef == 0)  {
+                CTRACE("debnls", lp::lp_settings::ddd, tout << "return false\n";);
                 return false;
+            }
             SASSERT(first_undef != UINT_MAX);
             if (num_undef == 1) {
                 // unit clause
@@ -1425,6 +1435,7 @@ namespace nlsat {
                 TRACE("nlsat_lazy", tout << "skipping clause, satisfy_learned: " << satisfy_learned << ", cls.is_learned(): " << cls.is_learned()
                       << ", lazy: " << m_lazy << "\n";);
             }
+            CTRACE("debnls", lp::lp_settings::ddd, tout << "return true\n";);
             return true;
         }
 
@@ -2193,8 +2204,14 @@ namespace nlsat {
                 }
 
                 if (lemma_is_clause(*conflict_clause)) {
-                    TRACE("nlsat", tout << "found decision literal in conflict clause\n";);
-                    VERIFY(process_clause(*conflict_clause, true));
+                    TRACE("nlsat", tout << "found decision literal in conflict clause\n";
+                          display(tout, *conflict_clause) << "\n";);
+                    bool ver = process_clause(*conflict_clause, true);
+                    if (!ver){
+                        lp::lp_settings::ddd++;      
+                        process_clause(*conflict_clause, true);
+                    }
+                    VERIFY(ver);
                     return true;
                 }
                 new_cls = mk_clause(sz, m_lemma.data(), true, m_lemma_assumptions.get());

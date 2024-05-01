@@ -266,9 +266,9 @@ public:
     simplex_strategy_enum & simplex_strategy()  { return m_simplex_strategy; }
     bool use_tableau_rows() const { return m_simplex_strategy == simplex_strategy_enum::tableau_rows; }
     
-#ifdef Z3DEBUG
+//#ifdef Z3DEBUG
 static unsigned ddd; // used for debugging    
-#endif
+//#endif
 }; // end of lp_settings class
 
 

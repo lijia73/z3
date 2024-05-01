@@ -92,7 +92,7 @@ bool vectors_are_equal(const vector<T> & a, const vector<T>  &b) {
     
     return true;
 }
-#ifdef Z3DEBUG
+//#ifdef Z3DEBUG
 unsigned lp_settings::ddd = 0;
-#endif
+//#endif
 }
