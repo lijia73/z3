@@ -108,6 +108,8 @@ namespace nlsat {
            \pre !is_full(s)
         */
         void peek_in_complement(interval_set const * s, bool is_int, anum & w, bool randomize);
+        bool is_int_full(interval_set *s);
+        bool int_full_from_scratch(interval_set *s);
     };
 
     typedef obj_ref<interval_set, interval_set_manager> interval_set_ref;

@@ -37,10 +37,20 @@ namespace nlsat {
     public:
         static unsigned get_obj_size(unsigned num) { return sizeof(interval_set) + num*sizeof(interval); }
         unsigned  m_num_intervals;
-        unsigned  m_ref_count:31;
+        unsigned  m_ref_count:29;
         unsigned  m_full:1;
+        private:
+        unsigned  m_int_full:2; 
+        public:
         interval  m_intervals[0];
+        void set_int_full(unsigned v) {
+            m_int_full = v;
+        }
+
+        unsigned int_full() {return m_int_full;}
+
     };
+
 
     void display(std::ostream & out, anum_manager & am, interval const & curr) {
         if (curr.m_lower_inf) {
@@ -148,6 +158,7 @@ namespace nlsat {
         new_set->m_num_intervals = 1;
         new_set->m_ref_count  = 0;
         new_set->m_full       = lower_inf && upper_inf;
+        new_set->set_int_full(2); // undefined
         interval * i = new (new_set->m_intervals) interval();
         i->m_lower_open = lower_open;
         i->m_lower_inf  = lower_inf;
@@ -262,6 +273,11 @@ namespace nlsat {
         void * mem = allocator.allocate(interval_set::get_obj_size(sz));
         interval_set * new_set = new (mem) interval_set();
         new_set->m_full = full;
+        if (full) {
+            new_set->set_int_full(1);
+        } else {
+            new_set->set_int_full(2);
+        }
         new_set->m_ref_count  = 0;
         new_set->m_num_intervals = sz;
         memcpy(new_set->m_intervals, buf.data(), sizeof(interval)*sz);
@@ -683,6 +699,129 @@ namespace nlsat {
         SASSERT(check_interval_set(m_am, result.size(), new_set->m_intervals));
         return new_set;
     }
+
+     bool interval_set_manager::int_full_from_scratch(interval_set *s) {
+        unsigned num = num_intervals(s);
+        if (!s->m_intervals[0].m_lower_inf || !s->m_intervals[num-1].m_upper_inf) {
+            return false;
+        }
+        
+        // Check the gaps between the intervals
+        for (unsigned i = 1; i < num; i++) {
+            auto &left = s->m_intervals[i-1];
+            auto &right = s->m_intervals[i];
+            if (m_am.eq(left.m_upper, right.m_lower)) {
+                if (!left.m_upper_open || !right.m_lower_open)
+                    break; // there is no gap!
+                if (m_am.is_int(left.m_upper)) {
+                    return false;
+                }
+                continue;
+            }
+            SASSERT(m_am.lt(left.m_upper,right.m_lower));
+            if (left.m_upper_open && m_am.is_int(left.m_upper)) {
+                return false;
+            }
+            if (right.m_lower_open && m_am.is_int(right.m_lower)) {
+                return false;
+            }
+            scoped_anum w(m_am);
+            if (m_am.is_int(left.m_upper)) {
+                m_am.add(left.m_upper, 1, w);
+                if (m_am.lt(w, right.m_lower)) {
+                    return false;
+                }
+                return true;
+            }
+            rational r;
+            
+            m_am.int_lt(left.m_upper, w);
+            m_am.to_rational(w, r);
+            SASSERT(m_am.gt(left.m_upper, r.to_mpq()));
+            while (m_am.gt(left.m_upper, r.to_mpq())) {
+                r++;
+            }
+
+            if (m_am.gt(right.m_lower, r.to_mpq())) {
+                return false;
+            }
+
+        }
+        return true;
+    }
+
+    
+    bool interval_set_manager::is_int_full(interval_set *s) {
+        SASSERT(s->int_full() == 0 || s->int_full() == 1 || s->int_full() == 2);
+        if (s->int_full() == 1) {
+            TRACE("nlsat_inf_set", tout << "full\n"; display(tout, s) << "\n";);
+
+            SASSERT(int_full_from_scratch(s));
+            return true;
+        }
+        if (s->int_full() == 0) {
+            SASSERT(!int_full_from_scratch(s));
+            return false;
+        }
+        unsigned num = num_intervals(s);
+        if (!s->m_intervals[0].m_lower_inf || !s->m_intervals[num-1].m_upper_inf) {
+            s->set_int_full(0);
+            return false;
+        }
+        
+        // Check the gaps between the intervals
+        for (unsigned i = 1; i < num; i++) {
+            auto &left = s->m_intervals[i-1];
+            auto &right = s->m_intervals[i];
+            if (m_am.eq(left.m_upper, right.m_lower)) {
+                if (!left.m_upper_open || !right.m_lower_open)
+                    break; // there is no gap!
+                if (m_am.is_int(left.m_upper)) {
+                    s->set_int_full(0);
+                    return false;
+                }
+                continue;
+            }
+            SASSERT(m_am.lt(left.m_upper,right.m_lower));
+            if (left.m_upper_open && m_am.is_int(left.m_upper)) {
+                s->set_int_full(0);
+                return false;
+            }
+            if (right.m_lower_open && m_am.is_int(right.m_lower)) {
+                s->set_int_full(0);
+                return false;
+            }
+            scoped_anum w(m_am);
+            if (m_am.is_int(left.m_upper)) {
+                m_am.add(left.m_upper, 1, w);
+                if (m_am.lt(w, right.m_lower)) {
+                    s->set_int_full(0);
+                    return false;
+                }
+                TRACE("nlsat_inf_set", tout << "full\n"; display(tout, s) << "\n";);
+                s->set_int_full(1);
+                return true;
+            }
+            rational r;
+            
+            m_am.int_lt(left.m_upper, w);
+            m_am.to_rational(w, r);
+            SASSERT(m_am.gt(left.m_upper, r.to_mpq()));
+            while (m_am.gt(left.m_upper, r.to_mpq())) {
+                r++;
+            }
+
+            if (m_am.gt(right.m_lower, r.to_mpq())) {
+                s->set_int_full(0); // found an integer in the gap
+                return false;
+            }
+         }
+        TRACE("nlsat_inf_set", tout << "full\n"; display(tout, s) << "\n";);
+        SASSERT(s->int_full() == 2);
+        s->set_int_full(1);
+        return true;
+    }
+
 
     void interval_set_manager::peek_in_complement(interval_set const * s, bool is_int, anum & w, bool randomize) {
         SASSERT(!is_full(s));

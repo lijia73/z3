@@ -33,6 +33,7 @@ Revision History:
 #include "nlsat/nlsat_evaluator.h"
 #include "nlsat/nlsat_explain.h"
 #include "nlsat/nlsat_params.hpp"
+#include "math/lp/lp_settings.h"
 
 #define NLSAT_EXTRA_VERBOSE
 
@@ -1287,6 +1288,17 @@ namespace nlsat {
             assign(l, j);
             SASSERT(value(l) == l_true);
         }
+
+        /*
+          Returns true if interval_set covers R, or, if m_xk is_int, covers N.
+         */
+        bool is_full(interval_set* interval_set) {
+            if (interval_set == nullptr) return false;
+            if (m_ism.is_full(interval_set)) return true;
+            
+            if (is_int(m_xk) == false) return false;
+            return m_ism.is_int_full(interval_set);            
+        }
         
         /**
            \brief m_infeasible[m_xk] <- m_infeasible[m_xk] Union s
@@ -1299,7 +1311,7 @@ namespace nlsat {
             TRACE("nlsat_inf_set", tout << "updating infeasible set\n"; m_ism.display(tout, xk_set) << "\n"; m_ism.display(tout, s) << "\n";);
             new_set = m_ism.mk_union(s, xk_set);
             TRACE("nlsat_inf_set", tout << "new infeasible set:\n"; m_ism.display(tout, new_set) << "\n";);
-            SASSERT(!m_ism.is_full(new_set));
+            SASSERT(!is_full(new_set));
             m_ism.inc_ref(new_set);
             m_infeasible[m_xk] = new_set;
         }
@@ -1354,7 +1366,7 @@ namespace nlsat {
             unsigned first_undef = UINT_MAX;         // position of the first undefined literal
             interval_set_ref first_undef_set(m_ism); // infeasible region of the first undefined literal
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
-            SASSERT(!m_ism.is_full(xk_set));
+            SASSERT(!is_full(xk_set));
             for (unsigned idx = 0; idx < cls.size(); ++idx) {
                 literal l = cls[idx];
                 checkpoint();
@@ -1380,7 +1392,7 @@ namespace nlsat {
                     SASSERT(is_satisfied(cls));
                     return true;
                 }
-                if (m_ism.is_full(curr_set)) {
+                if (is_full(curr_set)) {
                     TRACE("nlsat_inf_set", tout << "infeasible set is R, skip literal\n";);
                     R_propagate(~l, nullptr);
                     continue;
@@ -1392,10 +1404,12 @@ namespace nlsat {
                 }
                 interval_set_ref tmp(m_ism);
                 tmp = m_ism.mk_union(curr_set, xk_set);
-                if (m_ism.is_full(tmp)) {
+                lp::lp_settings::ddd++;
+                if (is_full(tmp)) {
                     TRACE("nlsat_inf_set", tout << "infeasible set + current set = R, skip literal\n";
                           display(tout, cls) << "\n";
                           m_ism.display(tout, tmp); tout << "\n";
+                          tout << "ddd:" << lp::lp_settings::ddd << "\n";
                           );
                     R_propagate(~l, tmp, false);
                     continue;
@@ -1470,7 +1484,7 @@ namespace nlsat {
 
         /**
            \brief Create a new stage. See Dejan and Leo's paper.
-        */
+        */  
         void new_stage() {
             m_stages++;
             save_new_stage_trail();
@@ -1485,7 +1499,7 @@ namespace nlsat {
         */
         void select_witness() {
             scoped_anum w(m_am);
-            SASSERT(!m_ism.is_full(m_infeasible[m_xk]));
+            SASSERT(!is_full(m_infeasible[m_xk]));
             m_ism.peek_in_complement(m_infeasible[m_xk], is_int(m_xk), w, m_randomize);
             TRACE("nlsat", 
                   tout << "infeasible intervals: "; m_ism.display(tout, m_infeasible[m_xk]); tout << "\n";
