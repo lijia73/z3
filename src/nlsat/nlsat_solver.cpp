@@ -962,7 +962,7 @@ namespace nlsat {
             if (learned && m_log_lemmas) {
                 log_lemma(verbose_stream(), *cls);
             }
-            if (learned && m_check_lemmas && false) {
+            if (learned && m_check_lemmas) {
                 check_lemma(cls->size(), cls->data(), false, cls->assumptions());
             }
             if (learned)
@@ -1392,6 +1392,7 @@ namespace nlsat {
                 }
                 interval_set_ref tmp(m_ism);
                 tmp = m_ism.mk_union(curr_set, xk_set);
+                TRACE("nlsat_inf_set", tout << "tmp:"; m_ism.display(tout, tmp) << "\n";);
                 if (m_ism.is_full(tmp)) {
                     TRACE("nlsat_inf_set", tout << "infeasible set + current set = R, skip literal\n";
                           display(tout, cls) << "\n";
