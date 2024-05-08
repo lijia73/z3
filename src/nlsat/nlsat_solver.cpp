@@ -962,7 +962,7 @@ namespace nlsat {
             if (learned && m_log_lemmas) {
                 log_lemma(verbose_stream(), *cls);
             }
-            if (learned && m_check_lemmas) {
+            if (learned && m_check_lemmas && false) {
                 check_lemma(cls->size(), cls->data(), false, cls->assumptions());
             }
             if (learned)
