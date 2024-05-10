@@ -1349,23 +1349,32 @@ namespace nlsat {
                 TRACE("nlsat", tout << "skip learned\n";);
                 return true; // ignore lemmas in super lazy mode
             }
+            TRACE("nlsat", "cls = ";      display(tout, cls) << "\n";);
+
             SASSERT(m_xk == max_var(cls));
             unsigned num_undef   = 0;                // number of undefined literals
             unsigned first_undef = UINT_MAX;         // position of the first undefined literal
             interval_set_ref first_undef_set(m_ism); // infeasible region of the first undefined literal
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
+            if (m_xk == 6) {
+                // enable_trace(("nlsat_evaluator");
+            }
             SASSERT(!m_ism.is_full(xk_set));
             for (unsigned idx = 0; idx < cls.size(); ++idx) {
                 literal l = cls[idx];
+                lbool l_value = value(l);
+                TRACE("nlsat", tout << "value for:"; display(tout, l) << " = " << l_value << "\n";);
+                
                 checkpoint();
-                if (value(l) == l_false)
+                if (l_value == l_false)
                     continue;
-                if (value(l) == l_true)
+                if (l_value == l_true) {
+                   
+
                     return true;  // could happen if clause is a tautology
-                CTRACE("nlsat", max_var(l) != m_xk || value(l) != l_undef, display(tout); 
-                       tout << "xk: " << m_xk << ", max_var(l): " << max_var(l) << ", l: "; display(tout, l) << "\n";
-                       display(tout, cls) << "\n";);
-                SASSERT(value(l) == l_undef);
+                }
+                TRACE("nlsat",        tout << "xk=" << m_xk<< " "; m_display_var(tout, m_xk) << ",literal l: "; display(tout, l) << "\n";);
+                SASSERT(l_value == l_undef);
                 SASSERT(max_var(l) == m_xk);
                 bool_var b = l.var();
                 atom * a   = m_atoms[b];
@@ -1378,6 +1387,10 @@ namespace nlsat {
                     TRACE("nlsat_inf_set", tout << "infeasible set is empty, found literal\n";);
                     R_propagate(l, nullptr);
                     SASSERT(is_satisfied(cls));
+                    if (m_xk == 6) {
+                        disable_trace("nlsat_evaluator");
+                    }
+                    
                     return true;
                 }
                 if (m_ism.is_full(curr_set)) {
@@ -1388,6 +1401,9 @@ namespace nlsat {
                 if (m_ism.subset(curr_set, xk_set)) {
                     TRACE("nlsat_inf_set", tout << "infeasible set is a subset of current set, found literal\n";);
                     R_propagate(l, xk_set);
+                    if (m_xk == 6) {
+                        disable_trace("nlsat_evaluator");
+                    }
                     return true;
                 }
                 interval_set_ref tmp(m_ism);
@@ -2194,8 +2210,18 @@ namespace nlsat {
                 }
 
                 if (lemma_is_clause(*conflict_clause)) {
-                    TRACE("nlsat", tout << "found decision literal in conflict clause\n";);
-                    VERIFY(process_clause(*conflict_clause, true));
+                    // enable_trace(("nlsat");
+                    TRACE("nlsat", tout << "found decision literal in conflict clause: calling process_clause just to check\n";);
+                    //   m_ism.display(std::cout << "<", m_infeasible[m_xk]) << "\n";
+                    bool ret = process_clause(*conflict_clause, true);
+                    if (!ret && false) {
+                        TRACE("nlsat_r", tout << "verify bug\n"; 
+                              display(tout);
+                              tout << "conflict_clause\n";
+                              display(tout, *conflict_clause) << "\n";
+                              );
+                        VERIFY(ret);
+                    }
                     return true;
                 }
                 new_cls = mk_clause(sz, m_lemma.data(), true, m_lemma_assumptions.get());
