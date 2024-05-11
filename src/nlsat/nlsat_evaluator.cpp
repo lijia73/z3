@@ -396,7 +396,7 @@ namespace nlsat {
 
         sign_table m_sign_table_tmp;
 
-        imp(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator):
+        imp(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator, bool round):
             m_solver(s),
             m_assignment(x2v),
             m_pm(pm),
@@ -406,8 +406,8 @@ namespace nlsat {
             m_tmp_values(m_am),
             m_add_roots_tmp(m_am),
             m_inf_tmp(m_am),
-            m_sign_table_tmp(m_am) {
-        }
+            m_sign_table_tmp(m_am)
+            {  }
 
         var max_var(poly const * p) const {
             return m_pm.max_var(p);
@@ -631,7 +631,6 @@ namespace nlsat {
 
         interval_set_ref infeasible_intervals(root_atom * a, bool neg, clause const* cls) {
             atom::kind k = a->get_kind();
-            
             if (neg) {
                 switch (k)
                 {
@@ -689,7 +688,7 @@ namespace nlsat {
                 anum const & r_i = roots[i-1];
                                     
                 TRACE("nlsat_evaluator", tout << "r_i ="; m_am.display_root(tout, r_i) << "\n";);
-                bool use_floor_ceil;
+                bool use_floor_ceil =  m_solver.round() && m_solver.is_int(a->max_var()) && !m_am.is_int(r_i);
                 switch (k) {
                 case atom::ROOT_EQ:
                     if (neg) {
@@ -705,7 +704,6 @@ namespace nlsat {
                 case atom::ROOT_LT:
                     TRACE("nlsat_evaluator", tout << "LT\n";);
 
-                    use_floor_ceil = true && m_solver.is_int(a->max_var()) && !m_am.is_int(r_i);
                     if (use_floor_ceil)  // we can change the feasible interval to (-oo, floor(r_i)], then the compliment is (floor(r_i), oo)
                         result = m_ism.mk(true, false, floor(r_i), true, true, dummy, jst, cls); // (floor(r_i), oo)
                     else     
@@ -713,7 +711,6 @@ namespace nlsat {
                     break;
                 case atom::ROOT_GT:
                     TRACE("nlsat_evaluator", tout << "GT\n";);
-                    use_floor_ceil = true && m_solver.is_int(a->max_var()) && !m_am.is_int(r_i);
                     if (use_floor_ceil) // we can change the feasible interval to [ceil(r_i), oo), then the compliment is (-oo, ceil(r_i) )
                         result = m_ism.mk(true, true, dummy, true, false, ceil(r_i), jst, cls);
                     else                       
@@ -721,11 +718,17 @@ namespace nlsat {
                     break;
                 case atom::ROOT_LE: // (r_i, oo)
                     TRACE("nlsat_evaluator", tout << "LE\n";);
-                    result = m_ism.mk(true, false, floor(r_i), true, true, dummy, jst, cls); 
+                    if (use_floor_ceil) 
+                        result = m_ism.mk(true, false, floor(r_i), true, true, dummy, jst, cls);
+                    else
+                        result = m_ism.mk(true, false, r_i, true, true, dummy, jst, cls);
                     break;
                 case atom::ROOT_GE: // (-oo, r_i)
                     TRACE("nlsat_evaluator", tout << "GE\n";);
-                    result = m_ism.mk(true, true, dummy, true, false , ceil(r_i), jst, cls); 
+                    if (use_floor_ceil)
+                        result = m_ism.mk(true, true, dummy, true, false , ceil(r_i), jst, cls);
+                    else
+                        result = m_ism.mk(true, true, dummy, true, false , r_i, jst, cls);                        
                     break;
                 default:
                     UNREACHABLE();
@@ -741,8 +744,8 @@ namespace nlsat {
         }
     };
     
-    evaluator::evaluator(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator) {
-        m_imp = alloc(imp, s, x2v, pm, allocator);
+    evaluator::evaluator(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator, bool round) {
+        m_imp = alloc(imp, s, x2v, pm, allocator, round);
     }
 
     evaluator::~evaluator() {

@@ -31,7 +31,7 @@ namespace nlsat {
         struct imp;
         imp *  m_imp;
     public:
-        evaluator(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator);
+        evaluator(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator, bool round);
         ~evaluator();
 
         interval_set_manager & ism() const;

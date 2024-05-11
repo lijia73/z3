@@ -263,6 +263,9 @@ namespace nlsat {
         std::ostream& display(std::ostream & out, var x) const;
         
         display_var_proc const & display_proc() const;
+
+        bool round() const;
+        
     };
 
 };

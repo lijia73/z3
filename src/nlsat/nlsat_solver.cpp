@@ -219,7 +219,7 @@ namespace nlsat {
         bool                   m_check_lemmas;
         unsigned               m_max_conflicts;
         unsigned               m_lemma_count;
-
+        bool                    m_round;
         // statistics
         unsigned               m_conflicts;
         unsigned               m_propagations;
@@ -239,7 +239,7 @@ namespace nlsat {
             m_am(c.m_am),
             m_asm(*this, m_allocator),
             m_assignment(m_am), m_lo(m_am), m_hi(m_am),
-            m_evaluator(s, m_assignment, m_pm, m_allocator), 
+            m_evaluator(s, m_assignment, m_pm, m_allocator, c.m_params.get_bool("round", true)), 
             m_ism(m_evaluator.ism()),
             m_num_bool_vars(0),
             m_display_var(m_perm),
@@ -280,11 +280,13 @@ namespace nlsat {
             m_inline_vars    = p.inline_vars();
             m_log_lemmas     = p.log_lemmas();
             m_check_lemmas   = p.check_lemmas();
+            m_round = p.round();
             m_ism.set_seed(m_random_seed);
             m_explain.set_simplify_cores(m_simplify_cores);
             m_explain.set_minimize_cores(min_cores);
             m_explain.set_factor(p.factor());
             m_am.updt_params(p.p);
+            
         }
 
         void reset() {
@@ -1586,10 +1588,25 @@ namespace nlsat {
                 }
                 else {
                     select_witness();
+                    SASSERT(bool_assignments_are_correct());
                 }
             }
         }
 
+        bool bool_assignments_are_correct() {
+            for (unsigned b = 0; b < m_bvalues.size(); b++) {
+                atom *a = m_atoms[b];
+                if (a == nullptr) continue;
+                if (m_bvalues[b] == l_undef) continue;
+                if (m_bvalues[b] != to_lbool( m_evaluator.eval(a, false))) {
+                    std::cout << "diff\n";
+                    return false;
+                }
+            }
+            std::cout << ".";
+            return true;
+        }
+        
         void gc() {
             if (m_learned.size() <= 4*m_clauses.size())
                 return;
@@ -4608,6 +4625,8 @@ namespace nlsat {
     void solver::collect_statistics(statistics & st) {
         return m_imp->collect_statistics(st);
     }
-
+    bool solver::round() const {
+        return m_imp->m_round;
+    }
 
 };
