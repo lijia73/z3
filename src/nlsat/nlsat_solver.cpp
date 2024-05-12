@@ -1340,41 +1340,19 @@ namespace nlsat {
             save_updt_eq_trail(m_var2eq[x]);
             m_var2eq[x] = a;
         }
-        
-        /**
-           \brief Process a clause that contains nonlinear arithmetic literals
 
-           If satisfy_learned is true, then learned clauses are satisfied even if m_lazy > 0
-        */
-        bool process_arith_clause(clause const & cls, bool satisfy_learned) {
-            if (!satisfy_learned && m_lazy >= 2 && cls.is_learned()) {
-                TRACE("nlsat", tout << "skip learned\n";);
-                return true; // ignore lemmas in super lazy mode
-            }
-            TRACE("nlsat", "cls = ";      display(tout, cls) << "\n";);
-
-            SASSERT(m_xk == max_var(cls));
-            unsigned num_undef   = 0;                // number of undefined literals
-            unsigned first_undef = UINT_MAX;         // position of the first undefined literal
-            interval_set_ref first_undef_set(m_ism); // infeasible region of the first undefined literal
+        bool process_arith_clause_literal_loop(clause const & cls, unsigned & first_undef, unsigned & num_undef,  interval_set_ref& first_undef_set ) {
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
-            if (m_xk == 6) {
-                // enable_trace(("nlsat_evaluator");
-            }
             SASSERT(!m_ism.is_full(xk_set));
             for (unsigned idx = 0; idx < cls.size(); ++idx) {
                 literal l = cls[idx];
                 lbool l_value = value(l);
                 TRACE("nlsat", tout << "value for:"; display(tout, l) << " = " << l_value << "\n";);
-                
                 checkpoint();
                 if (l_value == l_false)
                     continue;
-                if (l_value == l_true) {
-                   
-
+                if (l_value == l_true)
                     return true;  // could happen if clause is a tautology
-                }
                 TRACE("nlsat",        tout << "xk=" << m_xk<< " "; m_display_var(tout, m_xk) << ",literal l: "; display(tout, l) << "\n";);
                 SASSERT(l_value == l_undef);
                 SASSERT(max_var(l) == m_xk);
@@ -1389,10 +1367,6 @@ namespace nlsat {
                     TRACE("nlsat_inf_set", tout << "infeasible set is empty, found literal\n";);
                     R_propagate(l, nullptr);
                     SASSERT(is_satisfied(cls));
-                    if (m_xk == 6) {
-                        disable_trace("nlsat_evaluator");
-                    }
-                    
                     return true;
                 }
                 if (m_ism.is_full(curr_set)) {
@@ -1403,9 +1377,6 @@ namespace nlsat {
                 if (m_ism.subset(curr_set, xk_set)) {
                     TRACE("nlsat_inf_set", tout << "infeasible set is a subset of current set, found literal\n";);
                     R_propagate(l, xk_set);
-                    if (m_xk == 6) {
-                        disable_trace("nlsat_evaluator");
-                    }
                     return true;
                 }
                 interval_set_ref tmp(m_ism);
@@ -1425,6 +1396,27 @@ namespace nlsat {
                     first_undef_set = curr_set;
                 }
             }
+            return false;
+        }
+        
+        /**
+           \brief Process a clause that contains nonlinear arithmetic literals
+
+           If satisfy_learned is true, then learned clauses are satisfied even if m_lazy > 0
+        */
+        bool process_arith_clause(clause const & cls, bool satisfy_learned) {
+            if (!satisfy_learned && m_lazy >= 2 && cls.is_learned()) {
+                TRACE("nlsat", tout << "skip learned\n";);
+                return true; // ignore lemmas in super lazy mode
+            }
+            TRACE("nlsat", "cls = ";      display(tout, cls) << "\n";);
+
+            SASSERT(m_xk == max_var(cls));
+            unsigned num_undef = 0; // number of undefined literals
+            unsigned first_undef = UINT_MAX;         // position of the first undefined literal
+            interval_set_ref first_undef_set(m_ism); // infeasible region of the first undefined literal
+            if (process_arith_clause_literal_loop( cls, first_undef, num_undef,  first_undef_set))
+                return true;
             TRACE("nlsat_inf_set", tout << "num_undef: " << num_undef << "\n";);
             if (num_undef == 0) 
                 return false;
@@ -1603,7 +1595,6 @@ namespace nlsat {
                     return false;
                 }
             }
-            std::cout << ".";
             return true;
         }
         
