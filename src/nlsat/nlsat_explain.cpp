@@ -1511,6 +1511,7 @@ namespace nlsat {
                 literal l = core[i];
                 atom * a  = m_atoms[l.var()];
                 SASSERT(a != 0);
+
                 interval_set_ref inf = m_evaluator.infeasible_intervals(a, l.sign(), nullptr);
                 r = ism.mk_union(inf, r);
                 if (ism.is_full(r)) {

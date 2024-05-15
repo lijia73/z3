@@ -110,6 +110,7 @@ namespace nlsat {
         interval_set_manager & m_ism;
         ineq_atom_table        m_ineq_atoms;
         root_atom_table        m_root_atoms;
+        scoped_anum_vector   m_roots_tmp;
 
         vector<bound_constraint> m_bounds;
         
@@ -248,7 +249,8 @@ namespace nlsat {
             m_scope_lvl(0),
             m_lemma(s),
             m_lazy_clause(s),
-            m_lemma_assumptions(m_asm) {
+            m_lemma_assumptions(m_asm),
+            m_roots_tmp(m_am)  {
             updt_params(c.m_params);
             reset_statistics();
             mk_true_bvar();
@@ -929,7 +931,7 @@ namespace nlsat {
 
         void log_lemma(std::ostream& out, unsigned n, literal const* cls, bool is_valid) {
             ++m_lemma_count;
-            out << "(set-logic NRA)\n";
+            out << "(set-logic QF_NIA)\n";
             if (is_valid) {
                 display_smt2_bool_decls(out);
                 display_smt2_arith_decls(out);
@@ -962,6 +964,7 @@ namespace nlsat {
             std::sort(cls->begin(), cls->end(), lit_lt(*this));
             TRACE("nlsat", display(tout << " after sort:\n", *cls) << "\n";);
             if (learned && m_log_lemmas) {
+                verbose_stream() << ";Lemma from " << __FILE__ << "," << __LINE__<< "\n";
                 log_lemma(verbose_stream(), *cls);
             }
             if (learned && m_check_lemmas && false) {
@@ -1341,6 +1344,129 @@ namespace nlsat {
             m_var2eq[x] = a;
         }
 
+        atom::kind negate_root_kind(atom::kind k) const {
+                switch (k)
+                {
+                case atom::ROOT_EQ:
+                    return atom::ROOT_NE;
+                case atom::ROOT_LT:
+                    return atom::ROOT_GE;
+                case atom::ROOT_GT:
+                    return atom::ROOT_LE;
+                case atom::ROOT_LE:
+                    return atom::ROOT_GT;
+                case atom::ROOT_GE:
+                    return atom::ROOT_LT;
+                default:
+                    UNREACHABLE();
+                }
+                UNREACHABLE();
+                return atom::ROOT_NE; // does not matter
+        }
+        bool get_floor(anum const& v, anum& r) {
+            TRACE("nlsat", tout << "v: as root = "; m_am.display_root(tout, v) << ", as interval="; m_am.display_interval(tout, v) << std::endl;);
+            m_am.int_lt(v, r);
+            SASSERT(m_am.lt(r, v));
+            TRACE("nlsat", tout << "r = int_lt(v):"; m_am.display_root(tout, r) <<", as interval="; m_am.display_interval(tout, r) << std::endl;);
+            m_am.add(r, 1, r);
+            TRACE("nlsat", tout << "r+1:"; m_am.display_root(tout, r) <<", as interval="; m_am.display_interval(tout, r) << std::endl;);
+            if (m_am.lt(r, v)) {
+                return true;
+            }
+            TRACE("nlsat", tout << "r is not less than v" << std::endl;);
+
+            return false;
+        }
+
+        bool get_ceil(anum const& v, anum& r) {
+            TRACE("algebraic", tout << "r = int_lt(v, r):"; m_am.display_root(tout, r) <<", as interval="; 
+                m_am.display_interval(tout, v) << std::endl;);
+            m_am.int_gt(v, r);
+            SASSERT(m_am.gt(r, v));
+            TRACE("algebraic", tout << "r = int_gt(v, r):"; m_am.display_root(tout, r) <<", as interval=";
+                   m_am.display_interval(tout, r) << std::endl;);
+            m_am.add(r, -1, r);            
+            if (m_am.lt(v, r)){
+                return true;
+            }
+            TRACE("algebraic", tout << "v is not less than r" << std::endl;);
+
+            return false;
+        }
+
+        bool round_up_on_root_atom(literal l, root_atom* a, bool neg) {            
+            if (a->get_kind() == atom::ROOT_EQ) return false; // todo : address this case
+            scoped_anum t(m_am);
+            m_roots_tmp.reset();
+            m_am.isolate_roots(polynomial_ref(a->p(), m_pm), m_assignment, m_roots_tmp);
+            const anum & r_i = m_roots_tmp[a->i() - 1];
+            if (m_am.is_int(r_i)) return false;
+            atom::kind k = a->get_kind();
+            if (neg) {
+                k = negate_root_kind(k);
+            }
+            switch (k) {
+            case atom::ROOT_EQ:
+                UNREACHABLE();
+                break;
+            case atom::ROOT_LT:
+                {
+                    TRACE("nlsat_evaluator", tout << "LT\n";);
+                
+                    // strengthen the inequality to  x <= floor(r_i)
+                    anum rs;
+                    if (!get_floor(r_i, rs))
+                        return false;
+                   
+                    rational rs_rat; m_am.to_rational(rs, rs_rat);
+                    bool is_even = false;                        
+                    polynomial_ref p(m_pm);
+                    rational one(1);
+                    m_lemma.reset();
+                    m_lemma.push_back(~l);
+                    p = m_pm.mk_linear(1, &one, &m_xk, - rs_rat);
+                    poly* p1 = p.get();
+                    m_lemma.push_back(~mk_ineq_literal(atom::GT, 1, &p1, &is_even));
+                    clause * cls = mk_clause(m_lemma.size(), m_lemma.data(), true, nullptr);
+                    if (cls) {
+                        TRACE("nlsat", display(tout << "rounded up:", *cls) << "\n";);
+                    } else {
+                        UNREACHABLE();
+                    }
+                }
+                return true;
+                break;
+            case atom::ROOT_GT:
+                TRACE("nlsat_evaluator", tout << "GT\n";);
+                break;
+            case atom::ROOT_LE: 
+                TRACE("nlsat_evaluator", tout << "LE\n";);
+                break;
+            case atom::ROOT_GE: 
+                TRACE("nlsat_evaluator", tout << "GE\n";);
+                break;
+            default:
+                UNREACHABLE();
+                break;
+            }
+            UNREACHABLE();
+            return false;
+        }
+
+        bool round_up_on_atom(literal l, atom * a,  bool neg) {
+            return a->is_ineq_atom() ? false: // todo: handle this case
+                round_up_on_root_atom(l, to_root_atom(a), neg); 
+        }
+        
+        bool round_up(literal l) {
+            if (is_int(m_xk))
+                return false;
+            bool_var b = l.var();
+            atom * a   = m_atoms[b];
+            SASSERT(a != nullptr);
+            return round_up_on_atom(l, a, l.sign());           
+        }
+
         bool process_arith_clause_literal_loop(clause const & cls, unsigned & first_undef, unsigned & num_undef,  interval_set_ref& first_undef_set ) {
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
             SASSERT(!m_ism.is_full(xk_set));
@@ -1352,7 +1478,7 @@ namespace nlsat {
                 if (l_value == l_false)
                     continue;
                 if (l_value == l_true)
-                    return true;  // could happen if clause is a tautology
+                    return true;  // cotould happen if clause is a tautology
                 TRACE("nlsat",        tout << "xk=" << m_xk<< " "; m_display_var(tout, m_xk) << ",literal l: "; display(tout, l) << "\n";);
                 SASSERT(l_value == l_undef);
                 SASSERT(max_var(l) == m_xk);
@@ -1369,6 +1495,7 @@ namespace nlsat {
                     SASSERT(is_satisfied(cls));
                     return true;
                 }
+                
                 if (m_ism.is_full(curr_set)) {
                     TRACE("nlsat_inf_set", tout << "infeasible set is R, skip literal\n";);
                     R_propagate(~l, nullptr);
@@ -1389,6 +1516,9 @@ namespace nlsat {
                           );
                     R_propagate(~l, tmp, false);
                     continue;
+                }
+                if (round_up(l)) {
+                    return true;
                 }
                 num_undef++;
                 if (first_undef == UINT_MAX) {
@@ -1531,6 +1661,7 @@ namespace nlsat {
             TRACE("nlsat_proof_sk", tout << "ASSERTED\n"; display_abst(tout);); 
             TRACE("nlsat_mathematica", display_mathematica(tout););
             TRACE("nlsat", display_smt2(tout););
+            
             m_bk = 0;
             m_xk = null_var;
 
@@ -1921,7 +2052,7 @@ namespace nlsat {
                   display(tout, m_lazy_clause.size(), m_lazy_clause.data()) << "\n";);
 
             
-            if (m_log_lemmas)
+            if (m_log_lemmas && false)
                 log_lemma(verbose_stream(), m_lazy_clause.size(), m_lazy_clause.data(), true);
 
             if (m_check_lemmas) {
@@ -4329,10 +4460,12 @@ namespace nlsat {
         std::ostream& display_smt2_arith_decls(std::ostream & out) const {
             unsigned sz = m_is_int.size();
             for (unsigned i = 0; i < sz; i++) {
-                if (is_int(i))
-                    out << "(declare-fun x" << i << " () Int)\n";
-                else
-                    out << "(declare-fun x" << i << " () Real)\n";
+                if (is_int(i)) {
+                    out << "(declare-fun "; m_display_var(out, i) << " () Int)\n";
+                }
+                else {
+                    out << "(declare-fun "; m_display_var(out, i) << " () Real)\n";
+                }
             }
             return out;
         }
@@ -4351,7 +4484,7 @@ namespace nlsat {
             display_smt2_arith_decls(out);
             out << "(assert (and true\n";
             for (clause* c : m_clauses) {
-                display_smt2(out, *c) << "\n";
+                display_smt2(out, *c, m_display_var) << "\n";
             }
             out << "))\n" << std::endl;
             return out;
