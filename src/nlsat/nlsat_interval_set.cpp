@@ -269,14 +269,6 @@ namespace nlsat {
     }
 
     interval_set * interval_set_manager::mk_union(interval_set const * s1, interval_set const * s2) {
-#if 0
-        static unsigned s_count = 0;
-        s_count++;
-        if (s_count == 4470) {
-            enable_trace("nlsat_interval");
-            enable_trace("algebraic");
-        }
-#endif
         TRACE("nlsat_interval", tout << "mk_union\ns1: "; display(tout, s1); tout << "\ns2: "; display(tout, s2); tout << "\n";);
         if (s1 == nullptr || s1 == s2)
             return const_cast<interval_set*>(s2);

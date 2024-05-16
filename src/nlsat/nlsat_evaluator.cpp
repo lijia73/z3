@@ -33,37 +33,33 @@ namespace nlsat {
         scoped_anum_vector       m_add_roots_tmp;
         scoped_anum_vector       m_inf_tmp;
         
-        bool get_floor(atom* a, anum const& v, anum& r) {
-            if (!m_solver.is_int(a->max_var()) || m_am.is_int(v))
-                return false;
-            TRACE("algebraic", tout << "v: as root = "; m_am.display_root(tout, v) << ", as interval="; m_am.display_interval(tout, v) << std::endl;);
+        bool get_floor( anum const& v, anum& r) {
+            TRACE("nlsat_evaluator", tout << "v: as root = "; m_am.display_root(tout, v) << ", as interval="; m_am.display_interval(tout, v) << std::endl;);
             m_am.int_lt(v, r);
             SASSERT(m_am.lt(r, v));
-            TRACE("algebraic", tout << "r = int_lt(v):"; m_am.display_root(tout, r) <<", as interval="; m_am.display_interval(tout, r) << std::endl;);
+            TRACE("nlsat_evaluator", tout << "r = int_lt(v):"; m_am.display_root(tout, r) <<", as interval="; m_am.display_interval(tout, r) << std::endl;);
             m_am.add(r, 1, r);
-            TRACE("algebraic", tout << "r+1:"; m_am.display_root(tout, r) <<", as interval="; m_am.display_interval(tout, r) << std::endl;);
+            TRACE("nlsat_evaluator", tout << "r+1:"; m_am.display_root(tout, r) <<", as interval="; m_am.display_interval(tout, r) << std::endl;);
             if (m_am.lt(r, v)) {
                 return true;
             }
-            TRACE("algebraic", tout << "r is not less than v" << std::endl;);
+            TRACE("nlsat_evaluator", tout << "r is not less than v" << std::endl;);
 
             return false;
         }
 
-        bool get_ceil(atom* a, anum const& v, anum& r) {
-            if (!m_solver.is_int(a->max_var())||m_am.is_int(v))
-                return false;
-            TRACE("algebraic", tout << "r = int_lt(v, r):"; m_am.display_root(tout, r) <<", as interval="; 
+        bool get_ceil(anum const& v, anum& r) {
+            TRACE("nlsat_evaluator", tout << "r = int_lt(v, r):"; m_am.display_root(tout, r) <<", as interval="; 
                 m_am.display_interval(tout, v) << std::endl;);
             m_am.int_gt(v, r);
             SASSERT(m_am.gt(r, v));
-            TRACE("algebraic", tout << "r = int_gt(v, r):"; m_am.display_root(tout, r) <<", as interval=";
+            TRACE("nlsat_evaluator", tout << "r = int_gt(v, r):"; m_am.display_root(tout, r) <<", as interval=";
                    m_am.display_interval(tout, r) << std::endl;);
             m_am.add(r, -1, r);            
             if (m_am.lt(v, r)){
                 return true;
             }
-            TRACE("algebraic", tout << "v is not less than r" << std::endl;);
+            TRACE("nlsat_evaluator", tout << "v is not less than r" << std::endl;);
 
             return false;
         }
@@ -667,9 +663,6 @@ namespace nlsat {
             m_am.isolate_roots(polynomial_ref(a->p(), m_pm), undef_var_assignment(m_assignment, x), roots);
             interval_set_ref result(m_ism);
             // We look for infeasible intervals in the compliment of the feasible intervals.
-            // For the integral case of non-strict inequalities we enlarge them by using floor and ceil.
-            // For example, if x <= 1.3 and x is integral, we can conclude that x <= 1.
-            // From the other side, if x < 1.3 then x < 1 is too strong.
             if (a->i() > roots.size()) {
                 TRACE("nlsat_evaluator", tout << "a->i()=" << a->i() << " out of bounds\n";);
                 // p does not have sufficient roots
@@ -717,9 +710,63 @@ namespace nlsat {
                     UNREACHABLE();
                     break;
                 }
+                
+                TRACE("nlsat_evaluator", tout << "interval_set for x" << x << ": " << result << "\n";);
+                if (m_solver.is_int(x) && !m_am.is_int(r_i)) {
+                    interval_set_ref rounded_up_addition(m_ism);
+                    rounded_up_addition = infeasible_intervals_for_root_atom_round_up(a, neg, cls, k, r_i);
+                    TRACE("nlsat_evaluator", tout << "rounded_up_addition:" << rounded_up_addition << "\n";);
+                    result = m_ism.mk_union(rounded_up_addition, result);
+                }
             }
+            
             TRACE("nlsat_evaluator", tout << "interval_set for x" << x << ": " << result << "\n";);
+            
             return result;
+        }
+        // k is alread processed for neg
+        interval_set_ref infeasible_intervals_for_root_atom_round_up(root_atom* a, bool neg, const clause* cls, atom::kind k, const anum & r_i) {
+            interval_set_ref result(m_ism);
+            if (a->get_kind() == atom::ROOT_EQ){
+                result =  m_ism.mk_empty(); // todo : address this case
+                return result;
+            }
+            SASSERT(!m_am.is_int(r_i));
+            literal jst(a->bvar(), !neg); // it is important that this literal differs from the one in infeasible_intervals_for_root_atom()
+            anum rs;
+
+            switch (k) {
+            case atom::ROOT_NE:
+            case atom::ROOT_EQ:
+                result = m_ism.mk_empty();
+                break;
+            case atom::ROOT_LT:
+                    if (!get_floor(r_i, rs))
+                        result = m_ism.mk_empty();
+                    else
+                        result = m_ism.mk(false, false, rs, true, true, r_i, jst, cls); // [r, r_i) , we extending with [r_i, oo)
+                    break;
+                case atom::ROOT_GT:
+                    TRACE("nlsat_evaluator", tout << "GT\n";);
+                    if (!get_ceil(r_i, rs))
+                        result = m_ism.mk_empty();
+                    else
+                        result = m_ism.mk(true, false, r_i, false, false, rs, jst, cls);  // (-oo, r_i] (r_i, r)
+                    break;
+                case atom::ROOT_LE: // (r,r_i] added to (r_i, oo) 
+                    TRACE("nlsat_evaluator", tout << "LE\n";);
+                    result = m_ism.mk(true, false, rs, false, false, r_i, jst, cls);
+                    break;
+                case atom::ROOT_GE: // (-oo, r_i)
+                    TRACE("nlsat_evaluator", tout << "GE\n";);
+                    result = m_ism.mk(false, false, r_i, false, false, rs, jst, cls);  // (-oo, r_i) [r_i, r]
+                    break;
+                default:
+                    UNREACHABLE();
+                    break;
+                }
+
+            return result;            
         }
         
         interval_set_ref infeasible_intervals(atom * a,  bool neg, clause const* cls) {
