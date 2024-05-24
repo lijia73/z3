@@ -2949,6 +2949,29 @@ namespace algebraic_numbers {
         m_imp->int_gt(const_cast<numeral&>(a), b);
     }
 
+    
+    void  manager::floor(anum const& v, anum& r) {
+        SASSERT(!is_int(v));
+        TRACE("algebraic_floor", tout << "v: as root = "; display_root(tout, v) << "("; display_decimal(tout, v) << ")"<< std::endl;);
+        int_lt(v, r);
+        SASSERT(lt(r, v));
+        TRACE("algebraic_floor", tout << "r = int_lt(v):"; display_root(tout, r) <<"("; display_decimal(tout, r) << ")\n";);
+        add(r, 1, r);
+        TRACE("algebraic_floor", tout << "floor:"; display_root(tout, r) <<", as interval="; display_decimal(tout, r) << std::endl;);
+        SASSERT (lt(r, v));
+    }
+
+    void manager::ceil(anum const& v, anum& r) {
+        SASSERT(!is_int(v));
+        int_gt(v, r);
+        SASSERT(gt(r, v));
+        TRACE("algebraic_ceil", tout << "r = int_gt(v, r):"; display_root(tout, r) <<", " ;
+              display_decimal(tout, r) << std::endl;);
+        add(r, -1, r);            
+        SASSERT (lt(v, r));
+    }
+
+    
     void manager::select(numeral const & prev, numeral const & curr, numeral & result) {
         m_imp->select(const_cast<numeral&>(prev), const_cast<numeral&>(curr), result);
     }

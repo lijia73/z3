@@ -107,7 +107,11 @@ namespace nlsat {
            
            \pre !is_full(s)
         */
-        void peek_in_complement(interval_set const * s, bool is_int, anum & w, bool randomize);
+        bool pick_in_complement(interval_set const * s, bool is_int, anum & w, bool randomize, bool return_false_if_no_int);
+        void pick_randomly_with_no_restrictions(bool is_int, anum& w, bool randomize);
+        bool pick_in_complement_int_case(interval_set const*, anum& w, bool randomize);
+        bool pick_in_non_trivial_gaps(interval_set const * s, anum & w, bool randomize);
+        bool pick_in_unbounded_intervals(interval_set const * s, anum & w, bool randomize);
     };
 
     typedef obj_ref<interval_set, interval_set_manager> interval_set_ref;

@@ -1523,14 +1523,17 @@ namespace nlsat {
         void select_witness() {
             scoped_anum w(m_am);
             SASSERT(!m_ism.is_full(m_infeasible[m_xk]));
-            m_ism.peek_in_complement(m_infeasible[m_xk], is_int(m_xk), w, m_randomize);
-            TRACE("nlsat", 
-                  tout << "infeasible intervals: "; m_ism.display(tout, m_infeasible[m_xk]); tout << "\n";
-                  tout << "assigning "; m_display_var(tout, m_xk) << "(x" << m_xk << ") -> " << w << "\n";);
-            TRACE("nlsat_root", tout << "value as root object: "; m_am.display_root(tout, w); tout << "\n";);
-            if (!m_am.is_rational(w))
-                m_irrational_assignments++;
-            m_assignment.set_core(m_xk, w);
+            if (m_ism.pick_in_complement(m_infeasible[m_xk], is_int(m_xk), w, m_randomize, m_round)) {
+                TRACE("nlsat", 
+                      tout << "infeasible intervals: "; m_ism.display(tout, m_infeasible[m_xk]); tout << "\n";
+                      tout << "assigning "; m_display_var(tout, m_xk) << "(x" << m_xk << ") -> " << w << "\n";);
+                TRACE("nlsat_root", tout << "value as root object: "; m_am.display_root(tout, w); tout << "\n";);
+                if (!m_am.is_rational(w))
+                    m_irrational_assignments++;
+                m_assignment.set_core(m_xk, w);
+            } else {
+                NOT_IMPLEMENTED_YET();
+            }
         }
 
         
@@ -1935,6 +1938,11 @@ namespace nlsat {
                   display_mathematica_lemma(tout, core.size(), core.data(), true););
 
             m_lazy_clause.reset();
+            TRACE("nlsat_resolve", tout << "jst:\n";
+                  for (unsigned i = 0; i < jst.num_lits(); i++) {
+                      display(tout, jst.lit(i)) << ";";
+                  }
+                  tout << "\n";);
             m_explain(jst.num_lits(), jst.lits(), m_lazy_clause);
             for (unsigned i = 0; i < sz; i++)
                 m_lazy_clause.push_back(~jst.lit(i));

@@ -145,6 +145,9 @@ namespace algebraic_numbers {
         */
         void int_gt(numeral const & a, numeral & b);
         
+        void floor(anum const& v, anum& r);
+        void ceil(anum const& v, anum& r);
+
         /**
            \brief Store in result a value in the interval (prev, next)
 
