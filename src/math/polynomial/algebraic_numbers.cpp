@@ -2956,9 +2956,15 @@ namespace algebraic_numbers {
         int_lt(v, r);
         SASSERT(lt(r, v));
         TRACE("algebraic_floor", tout << "r = int_lt(v):"; display_root(tout, r) <<"("; display_decimal(tout, r) << ")\n";);
-        add(r, 1, r);
-        TRACE("algebraic_floor", tout << "floor:"; display_root(tout, r) <<", as interval="; display_decimal(tout, r) << std::endl;);
-        SASSERT (lt(r, v));
+        scoped_anum t(*this);
+        add(r, 1, t);
+        while (lt(t, v)) { // look for r, such r < v < r + 1
+            set(r, t);
+            add(r, 1, t);
+        }
+        TRACE("algebraic_floor", tout << "floor:"; display_root(tout, r) <<", as a number:"; display_decimal(tout, r) << std::endl;);
+        SASSERT(lt(r, v));
+        SASSERT(lt(v, t));
     }
 
     void manager::ceil(anum const& v, anum& r) {
@@ -2967,8 +2973,14 @@ namespace algebraic_numbers {
         SASSERT(gt(r, v));
         TRACE("algebraic_ceil", tout << "r = int_gt(v, r):"; display_root(tout, r) <<", " ;
               display_decimal(tout, r) << std::endl;);
-        add(r, -1, r);            
-        SASSERT (lt(v, r));
+        scoped_anum t(*this);
+        add(r, -1, t);   // look for r, such r - 1 <  v < r
+        while (lt(v,t)) { // still have v < r - 1 < r
+            set(r, t);
+            add(r, -1, t);
+        }
+        SASSERT(lt(t, v)); 
+        SASSERT(lt(v, r));
     }
 
     

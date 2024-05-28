@@ -1277,17 +1277,64 @@ namespace nlsat {
                 decide(cls[first_undef]);
             return true;
         }
+
+        void collect_vars(unsigned_vector & var_set, svector<var> & vs, literal l) {
+            vs.clear();
+            vars(l, vs);
+            for (var v : vs) {
+                if( v == m_xk) continue;
+                if (v >= var_set.size()) {
+                    var_set.reserve(v + 1, -1);
+                }
+                var_set[v] = v;
+            }
+         
+        }
+#define ROUND 1        
+        void invalidate_related_assignments(literal l) {
+            unsigned_vector var_set;
+            svector<var> vs;
+
+            collect_vars(var_set, vs, l);
+            // Go over all literals of "clauses"
+            for (clause* cls : m_clauses_buf) 
+                for (literal l : *cls) 
+                    collect_vars(var_set, vs, l);
+            
+            for (literal l : m_core)
+              collect_vars(var_set, vs, l);
+            
+            // For each variable x in the set
+            for (var x : var_set) {
+                if (x == -1 || x == m_xk) continue;
+                 const anum& v = m_assignment.value(x);
+                    bool is_even = false;                        
+                    polynomial_ref p(m_pm);
+                    rational vr;
+                    m_am.to_rational(v, vr);
+                    rational one(1);
+                    p = m_pm.mk_linear(1, &one, &x, -vr);
+                    poly* p1 = p.get();
+                    // todo - enable
+                    #if ROUND
+                    m_core.push_back(mk_ineq_literal(atom::EQ, 1, &p1, &is_even));
+                    #endif
+            }                                                                                                 
+        }
         
         /**
            \brief assign l to true, because l + (justification of) s is infeasible in RCF in the current interpretation.
         */
-        literal_vector core;
-        ptr_vector<clause> clauses;
-        void R_propagate(literal l, interval_set const * s, bool include_l = true) {
-            m_ism.get_justifications(s, core, clauses);
+        literal_vector m_core;
+        ptr_vector<clause> m_clauses_buf;
+        void R_propagate(literal l, interval_set const * s, bool include_l = true, bool  invalidate_some_assignments=false) {
+            m_ism.get_justifications(s, m_core, m_clauses_buf);
+            if (invalidate_some_assignments) {
+                invalidate_related_assignments(l);
+            }
             if (include_l) 
-                core.push_back(~l);
-            auto j = mk_lazy_jst(m_allocator, core.size(), core.data(), clauses.size(), clauses.data());
+                m_core.push_back(~l);
+            auto j = mk_lazy_jst(m_allocator, m_core.size(), m_core.data(), m_clauses_buf.size(), m_clauses_buf.data());
             TRACE("nlsat_resolve", display(tout, j); display_eval(tout << "evaluated:", j));
             assign(l, j);
             SASSERT(value(l) == l_true);
@@ -1363,8 +1410,11 @@ namespace nlsat {
                 UNREACHABLE();
                 return atom::ROOT_NE; // does not matter
         }
-       
 
+        bool is_full_or_int_full(interval_set_ref & curr_set) {
+            return m_ism.is_full(curr_set) || (m_round && is_int(m_xk) && m_ism.is_int_full(curr_set));
+        }
+        
         bool process_arith_clause_literal_loop(clause const & cls, unsigned & first_undef, unsigned & num_undef,  interval_set_ref& first_undef_set ) {
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
             SASSERT(!m_ism.is_full(xk_set));
@@ -1393,8 +1443,7 @@ namespace nlsat {
                     SASSERT(is_satisfied(cls));
                     return true;
                 }
-                
-                if (m_ism.is_full(curr_set)) {
+                if (is_full_or_int_full(curr_set)) {
                     TRACE("nlsat_inf_set", tout << "infeasible set is R, skip literal\n";);
                     R_propagate(~l, nullptr);
                     continue;
@@ -1523,17 +1572,14 @@ namespace nlsat {
         void select_witness() {
             scoped_anum w(m_am);
             SASSERT(!m_ism.is_full(m_infeasible[m_xk]));
-            if (m_ism.pick_in_complement(m_infeasible[m_xk], is_int(m_xk), w, m_randomize, m_round)) {
-                TRACE("nlsat", 
-                      tout << "infeasible intervals: "; m_ism.display(tout, m_infeasible[m_xk]); tout << "\n";
-                      tout << "assigning "; m_display_var(tout, m_xk) << "(x" << m_xk << ") -> " << w << "\n";);
-                TRACE("nlsat_root", tout << "value as root object: "; m_am.display_root(tout, w); tout << "\n";);
-                if (!m_am.is_rational(w))
-                    m_irrational_assignments++;
-                m_assignment.set_core(m_xk, w);
-            } else {
-                NOT_IMPLEMENTED_YET();
-            }
+            m_ism.pick_in_complement(m_infeasible[m_xk], is_int(m_xk), w, m_randomize);
+            TRACE("nlsat", 
+                  tout << "infeasible intervals: "; m_ism.display(tout, m_infeasible[m_xk]); tout << "\n";
+                  tout << "assigning "; m_display_var(tout, m_xk) << "(x" << m_xk << ") -> " << w << "\n";);
+            TRACE("nlsat_root", tout << "value as root object: "; m_am.display_root(tout, w); tout << "\n";);
+            if (!m_am.is_rational(w))
+                m_irrational_assignments++;
+            m_assignment.set_core(m_xk, w);  
         }
 
         

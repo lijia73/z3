@@ -708,18 +708,10 @@ namespace nlsat {
                     UNREACHABLE();
                     break;
                 }
-                
                 TRACE("nlsat_evaluator", tout << "interval_set for x" << x << ": " << result << "\n";);
-                if (false && m_solver.round() && m_solver.is_int(x) && !m_am.is_int(r_i)) {
-                    interval_set_ref rounded_up_addition(m_ism);
-                    rounded_up_addition = infeasible_intervals_for_root_atom_round_up(a, neg, cls, k, r_i);
-                    TRACE("nlsat_evaluator", tout << "rounded_up_addition:" << rounded_up_addition << "\n";);
-                    result = m_ism.mk_union(rounded_up_addition, result);
-                }
             }
             
-            TRACE("nlsat_evaluator", tout << "interval_set for x" << x << ": " << result << "\n";);
-            
+            TRACE("nlsat_evaluator", tout << "return interval_set for x" << x << ": " << result << "\n";);
             return result;
         }
         // k is alread processed for neg
