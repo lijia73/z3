@@ -41,7 +41,7 @@ Revision History:
 #else
 #define NLSAT_VERBOSE(CODE) ((void)0)
 #endif
-
+int abcd = 0;
 namespace nlsat {
 
     typedef chashtable<ineq_atom*, ineq_atom::hash_proc, ineq_atom::eq_proc> ineq_atom_table;
@@ -1290,48 +1290,14 @@ namespace nlsat {
             }
          
         }
-#define ROUND 1        
-        void invalidate_related_assignments(literal l) {
-            unsigned_vector var_set;
-            svector<var> vs;
-
-            collect_vars(var_set, vs, l);
-            // Go over all literals of "clauses"
-            for (clause* cls : m_clauses_buf) 
-                for (literal l : *cls) 
-                    collect_vars(var_set, vs, l);
-            
-            for (literal l : m_core)
-              collect_vars(var_set, vs, l);
-            
-            // For each variable x in the set
-            for (var x : var_set) {
-                if (x == -1 || x == m_xk) continue;
-                 const anum& v = m_assignment.value(x);
-                    bool is_even = false;                        
-                    polynomial_ref p(m_pm);
-                    rational vr;
-                    m_am.to_rational(v, vr);
-                    rational one(1);
-                    p = m_pm.mk_linear(1, &one, &x, -vr);
-                    poly* p1 = p.get();
-                    // todo - enable
-                    #if ROUND
-                    m_core.push_back(mk_ineq_literal(atom::EQ, 1, &p1, &is_even));
-                    #endif
-            }                                                                                                 
-        }
         
         /**
            \brief assign l to true, because l + (justification of) s is infeasible in RCF in the current interpretation.
         */
         literal_vector m_core;
         ptr_vector<clause> m_clauses_buf;
-        void R_propagate(literal l, interval_set const * s, bool include_l = true, bool  invalidate_some_assignments=false) {
+        void R_propagate(literal l, interval_set const * s, bool include_l = true) {
             m_ism.get_justifications(s, m_core, m_clauses_buf);
-            if (invalidate_some_assignments) {
-                invalidate_related_assignments(l);
-            }
             if (include_l) 
                 m_core.push_back(~l);
             auto j = mk_lazy_jst(m_allocator, m_core.size(), m_core.data(), m_clauses_buf.size(), m_clauses_buf.data());
@@ -1415,9 +1381,11 @@ namespace nlsat {
             return m_ism.is_full(curr_set) || (m_round && is_int(m_xk) && m_ism.is_int_full(curr_set));
         }
         
-        bool process_arith_clause_literal_loop(clause const & cls, unsigned & first_undef, unsigned & num_undef,  interval_set_ref& first_undef_set ) {
+        bool process_arith_clause_literal_loop(clause const & cls, unsigned & first_undef, unsigned & num_undef,  interval_set_ref& first_undef_set) {
+            bool only_int_full = false;
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
-            SASSERT(!m_ism.is_full(xk_set));
+            TRACE("nlsat", tout << "xk_set:"; m_ism.display(tout, xk_set););
+            SASSERT(!is_full_or_int_full(interval_set_ref(xk_set, m_ism)));
             for (unsigned idx = 0; idx < cls.size(); ++idx) {
                 literal l = cls[idx];
                 lbool l_value = value(l);
@@ -1444,6 +1412,10 @@ namespace nlsat {
                     return true;
                 }
                 if (is_full_or_int_full(curr_set)) {
+                    if (!m_ism.is_full(curr_set)) {
+                        TRACE("nlsat_inf_set",  tout << ", int infeasible\n"; );
+                        only_int_full = true;
+                    }
                     TRACE("nlsat_inf_set", tout << "infeasible set is R, skip literal\n";);
                     R_propagate(~l, nullptr);
                     continue;
@@ -1456,11 +1428,13 @@ namespace nlsat {
                 interval_set_ref tmp(m_ism);
                 tmp = m_ism.mk_union(curr_set, xk_set);
                 TRACE("nlsat_inf_set", tout << "tmp:"; m_ism.display(tout, tmp) << "\n";);
-                if (m_ism.is_full(tmp)) {
-                    TRACE("nlsat_inf_set", tout << "infeasible set + current set = R, skip literal\n";
-                          display(tout, cls) << "\n";
-                          m_ism.display(tout, tmp); tout << "\n";
-                          );
+                if (is_full_or_int_full(tmp)) {
+                    if (!m_ism.is_full(tmp)) {
+                        TRACE("nlsat_inf_set",  tout << ", int infeasible\n"; );
+                        only_int_full = true;
+                    }
+
+                    TRACE("nlsat_inf_set",  tout << "infeasible set is R, skip literal\n";  m_ism.display(tout, tmp); tout << "\n"; );
                     R_propagate(~l, tmp, false);
                     continue;
                 }
@@ -1666,8 +1640,18 @@ namespace nlsat {
                 atom *a = m_atoms[b];
                 if (a == nullptr) continue;
                 if (m_bvalues[b] == l_undef) continue;
-                if (m_bvalues[b] != to_lbool( m_evaluator.eval(a, false))) {
-                    std::cout << "diff\n";
+                auto rs = to_lbool( m_evaluator.eval(a, false));
+                if (m_bvalues[b] != rs) {
+                    TRACE("nlsat", tout << "diff in assignments\n";
+                          tout << "m_bvalues[" << b << "]:" << m_bvalues[b] << "\n";
+                          tout << "rs:" << rs << "\n";
+                          tout << "atom a:"; display_atom(tout, b) << "\n";
+                          );
+                    // call to trace
+                    rs =  to_lbool( m_evaluator.eval(a, false));
+
+                    TRACE("nlsat", tout << "exiting\n";);
+                    exit(1);
                     return false;
                 }
             }

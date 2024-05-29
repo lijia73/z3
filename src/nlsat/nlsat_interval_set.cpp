@@ -798,7 +798,7 @@ namespace nlsat {
                 return true;
             }
         }
-        TRACE("nlsat_interval_set_pick", tout << "cannot pick on int\n";);
+        TRACE("nlsat_interval_set_pick", tout << "cannot pick an int\n";);
         return false;
     }
 
@@ -812,48 +812,31 @@ namespace nlsat {
             }
             return false;  // ...)[... or ...](...
         } 
-        SASSERT(m_am.lt(l.m_upper, r.m_lower)); 
-        if (l.m_upper_open && m_am.is_int(l.m_upper)) { //...) r
-             TRACE("nlsat_interval_set_pick", tout << "found a gap containing int\n";);
-            return true;
-        }
-        if (r.m_lower_open && m_am.is_int(r.m_lower)) { // l ...(...
-            TRACE("nlsat_interval_set_pick", tout << "found a gap containing int\n";);
-            return true;
-        }
+        const auto& a = l.m_upper;
+        const auto& b = r.m_lower;
+        SASSERT(m_am.lt(a, b)); 
         scoped_anum t(m_am);
-        m_am.add(l.m_upper, 1, t);
-        if (m_am.lt(t, r.m_lower)) 
+        m_am.add(a, 1, t);
+        if (m_am.lt(t, b)) 
             return true;  // the length of the interval is greater than 1
-        if (m_am.is_int(l.m_upper)) {
-            SASSERT(!l.m_upper_open);
-            m_am.add(l.m_upper, 1, t);  
-            if (m_am.lt(t, r.m_lower)) { //..)..1...w
-                TRACE("nlsat_interval_set_pick", tout << "found a gap containing int\n";);
-                return true;
-            }
-            if (m_am.eq(t, r.m_lower) && r.m_lower_open) {
-                TRACE("nlsat_interval_set_pick", tout << "found a gap containing int\n";);
-                return true;   
-            }            
-        }
-
-        if (m_am.is_int(r.m_lower)) {
-            SASSERT(!r.m_upper_open);
-            m_am.add(r.m_lower, -1, t);  
-            if (m_am.lt(l.m_upper, t)) { //..)..1...w
-                TRACE("nlsat_interval_set_pick", tout << "found a gap containing int\n";);
-                return true;
-            }
-            SASSERT(m_am.lt(t, l.m_upper));
-            return false;                        
-        }
         
-        scoped_anum fl(m_am);
-        m_am.floor(r.m_lower, fl);
-        bool ret = m_am.lt(l.m_upper, fl);
+        if (m_am.is_int(a)) { 
+            if (l.m_upper_open) {
+               TRACE("nlsat_interval_set_pick", tout << "found a gap containing int\n";);
+               return true; 
+               
+            }
+		
+                // the only candidate now is a+1, becase a+2 is too large, and a+1 feasible only if 
+                // b is int and r.m_lower_open
+			SASSERT(!m_am.is_int(b)|| m_am.eq(b, t));
+            return r.m_lower_open && m_am.is_int(b);
+        }
+        SASSERT(!m_am.is_int(a));
+        m_am.ceil(a, t);
+        bool ret = m_am.lt(t, b) || (m_am.eq(t, b) && r.m_lower_open);
         if (ret) {
-            TRACE("nlsat_interval_set_pick", tout << "found a gap containing int\n";);
+            TRACE("nlsat_interval_set_pick", tout << "found a gap containing int\n";);            
         } else {
             TRACE("nlsat_interval_set_pick", tout << "cannot pick an int\n";);
         }
@@ -879,11 +862,10 @@ namespace nlsat {
     
     
     void interval_set_manager::pick_in_complement_int_case(interval_set const * s, anum & w, bool randomize) {
-        // randomize ignored for the time being
         TRACE("nlsat_interval_set_pick", tout << "picking an int:"; display(tout, s) << "\n";);
 
         unsigned num  = s->m_num_intervals;
-        SASSERT (s->m_intervals[0].m_lower_inf && s->m_intervals[num-1].m_upper_inf);
+        SASSERT(s->m_intervals[0].m_lower_inf && s->m_intervals[num-1].m_upper_inf);
         int n = 0;
         for (unsigned i = 1; i < num; i++) {
             auto& l = s->m_intervals[i - 1];  // (l) (r)
@@ -909,7 +891,11 @@ namespace nlsat {
         unsigned n = 0;
         pick_in_unbounded_intervals(s, w, randomize, n);
 
-        if (is_int && false) {
+        if (is_int) {
+            if (n > 0) {
+                SASSERT(m_am.is_int(w));
+                return;
+            }
             pick_in_complement_int_case(s, w, randomize);
             return;
         }

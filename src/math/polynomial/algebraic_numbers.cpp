@@ -2951,7 +2951,9 @@ namespace algebraic_numbers {
 
     
     void  manager::floor(anum const& v, anum& r) {
-        SASSERT(!is_int(v));
+        if (is_int(v)) {
+            set(r, v); return;
+        }
         TRACE("algebraic_floor", tout << "v: as root = "; display_root(tout, v) << "("; display_decimal(tout, v) << ")"<< std::endl;);
         int_lt(v, r);
         SASSERT(lt(r, v));
@@ -2968,7 +2970,9 @@ namespace algebraic_numbers {
     }
 
     void manager::ceil(anum const& v, anum& r) {
-        SASSERT(!is_int(v));
+        if (is_int(v)) {
+            set(r, v); return;
+        }
         int_gt(v, r);
         SASSERT(gt(r, v));
         TRACE("algebraic_ceil", tout << "r = int_gt(v, r):"; display_root(tout, r) <<", " ;
