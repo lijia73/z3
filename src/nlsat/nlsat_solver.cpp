@@ -41,7 +41,6 @@ Revision History:
 #else
 #define NLSAT_VERBOSE(CODE) ((void)0)
 #endif
-int abcd = 0;
 namespace nlsat {
 
     typedef chashtable<ineq_atom*, ineq_atom::hash_proc, ineq_atom::eq_proc> ineq_atom_table;
@@ -1378,7 +1377,7 @@ namespace nlsat {
         }
 
         bool is_full_or_int_full(interval_set_ref & curr_set) {
-            return m_ism.is_full(curr_set) || (m_round && is_int(m_xk) && m_ism.is_int_full(curr_set));
+            return m_ism.is_full(curr_set); // || (m_round && is_int(m_xk) && m_ism.is_int_full(curr_set));
         }
         
         bool process_arith_clause_literal_loop(clause const & cls, unsigned & first_undef, unsigned & num_undef,  interval_set_ref& first_undef_set) {
@@ -1546,7 +1545,7 @@ namespace nlsat {
         void select_witness() {
             scoped_anum w(m_am);
             SASSERT(!m_ism.is_full(m_infeasible[m_xk]));
-            m_ism.pick_in_complement(m_infeasible[m_xk], is_int(m_xk), w, m_randomize);
+            m_ism.pick_in_compliment(m_infeasible[m_xk], is_int(m_xk), w, m_randomize);
             TRACE("nlsat", 
                   tout << "infeasible intervals: "; m_ism.display(tout, m_infeasible[m_xk]); tout << "\n";
                   tout << "assigning "; m_display_var(tout, m_xk) << "(x" << m_xk << ") -> " << w << "\n";);

@@ -15,6 +15,6 @@ def_module_params('nlsat',
                           ('inline_vars', BOOL, False, "inline variables that can be isolated from equations (not supported in incremental mode)"),
                           ('seed', UINT, 0, "random seed."),
                           ('factor', BOOL, True, "factor polynomials produced during conflict resolution.")     ,
-                          ('round', BOOL, True, "round ints")     
+                          ('round', BOOL, False, "round ints")     
                           ))         
                 

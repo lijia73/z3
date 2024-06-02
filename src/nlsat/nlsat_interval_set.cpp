@@ -19,7 +19,6 @@ Revision History:
 #include "nlsat/nlsat_interval_set.h"
 #include "math/polynomial/algebraic_numbers.h"
 #include "util/buffer.h"
-
 namespace nlsat {
 
     struct interval {
@@ -758,47 +757,44 @@ namespace nlsat {
          return false;
     }
     
-    void interval_set_manager::pick_in_complement(interval_set const * s, bool is_int, anum & w, bool randomize) {
-         pick_in_complement_(s, is_int, w, randomize);
+    void interval_set_manager::pick_in_compliment(interval_set const * s, bool is_int, anum & w, bool randomize) {
+         pick_in_compliment_(s, is_int, w, randomize);
     }
     
-   bool pick_in_complement_int_case_l_r(const interval &l, const interval &r, anum& w, anum_manager & m_am) {
-        if (m_am.eq(l.m_upper, r.m_lower)) {    
-            if (l.m_upper_open && r.m_lower_open && m_am.is_int(l.m_upper)) {
+   bool pick_in_compliment_int_case_l_r(const interval &l, const interval &r, anum& w, anum_manager & m_am) {
+       const auto & a = l.m_upper;
+       const auto & b = r.m_lower;
+       bool ao = l.m_upper_open;
+       bool bo = r.m_lower_open;
+
+        if (m_am.eq(a, b)) {    
+            if (ao && bo) {
                 m_am.set(w, l.m_upper);   //  ...)(...  
-                    TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
+                TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
                 return true;
             }
             return false;  // ...)[... or ...](...
         } 
-        SASSERT(m_am.lt(l.m_upper, r.m_lower)); 
-        if (l.m_upper_open && m_am.is_int(l.m_upper)) { //...) r
-            m_am.set(w, l.m_upper);
-            TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
-            return true;
-        }
-        if (r.m_lower_open && m_am.is_int(r.m_lower)) { // l ...(...
-            m_am.set(w, r.m_lower);
-            TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
-            return true;
-        }
-        if (m_am.is_int(l.m_upper)) {
-            SASSERT(!l.m_upper_open);
-            m_am.add(l.m_upper, 1, w);  
-            if (m_am.lt(w, r.m_lower)) { //..)..1...w
+        SASSERT(m_am.lt(a, b));
+        if (m_am.is_int(a)) {
+            if (ao) {
+                TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
+                m_am.set(w, a);
+                return true;
+            }
+            m_am.add(a, 1, w);
+            if (m_am.lt(w, b) || (m_am.eq(w, b) && bo)) {
                 TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
                 return true;
             }
+            return false;
         }
-        if (m_am.is_int(r.m_lower)) {
-            SASSERT(!r.m_lower_open);
-            m_am.add(l.m_lower, -1, w);
-            if (m_am.lt(l.m_upper, w)) { // ..)..w...1...(...
-                TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
-                return true;
-            }
+        SASSERT(!m_am.is_int(a));
+        m_am.ceil(a, w);
+        if (m_am.lt(w, b) || (m_am.eq(w, b) && bo)) {
+            TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
+            return true;
         }
-        TRACE("nlsat_interval_set_pick", tout << "cannot pick an int\n";);
         return false;
     }
 
@@ -861,27 +857,29 @@ namespace nlsat {
      }
     
     
-    void interval_set_manager::pick_in_complement_int_case(interval_set const * s, anum & w, bool randomize) {
+    bool interval_set_manager::pick_in_compliment_int_case(interval_set const * s, anum & w, bool randomize) {
         TRACE("nlsat_interval_set_pick", tout << "picking an int:"; display(tout, s) << "\n";);
 
         unsigned num  = s->m_num_intervals;
         SASSERT(s->m_intervals[0].m_lower_inf && s->m_intervals[num-1].m_upper_inf);
         int n = 0;
+        scoped_anum ww(m_am);
         for (unsigned i = 1; i < num; i++) {
             auto& l = s->m_intervals[i - 1];  // (l) (r)
             auto& r = s->m_intervals[i];
-            if (pick_in_complement_int_case_l_r(l, r, w, m_am)) {
+            if (pick_in_compliment_int_case_l_r(l, r, ww, m_am)) {
                 n++;
                 if (randomize && (n == 1 || m_rand() % n == 0)) {
-                    return;
+                    m_am.set(w, ww);
+                    TRACE("nlsat_interval_set_pick", tout << "i:" << i << "\n";);
                 }
             }
         }
-        TRACE("nlsat_interval_set_pick", tout << "pick int:"; m_am.display_decimal(tout, w); tout <<  " in "; display(tout, s) << "\n";);
-        UNREACHABLE();
+        CTRACE("nlsat_interval_set_pick", n > 0, tout << "pick int:"; m_am.display_decimal(tout, w); tout <<  " in "; display(tout, s) << "\n";);
+        return n > 0;
     }
     
-    void interval_set_manager::pick_in_complement_(interval_set const * s, bool is_int, anum & w, bool randomize) {
+    void interval_set_manager::pick_in_compliment_(interval_set const * s, bool is_int, anum & w, bool randomize) {
         TRACE("nlsat_interval_set_pick", tout << "start look into:"; display(tout, s)<<"\n";);
         SASSERT(!is_full(s));
         if (s == nullptr) {
@@ -896,8 +894,11 @@ namespace nlsat {
                 SASSERT(m_am.is_int(w));
                 return;
             }
-            pick_in_complement_int_case(s, w, randomize);
-            return;
+            if (pick_in_compliment_int_case(s, w, randomize)) {
+                SASSERT(! belongs_to(w, s, m_am));
+                return;
+            }
+
         }
         
         pick_in_non_trivial_gaps(s, w, randomize, n);
