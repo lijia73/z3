@@ -762,12 +762,10 @@ namespace nlsat {
     }
     
    bool pick_in_compliment_int_case_l_r(const interval &l, const interval &r, anum& w, anum_manager & m_am) {
-       const auto & a = l.m_upper;
-       const auto & b = r.m_lower;
        bool ao = l.m_upper_open;
        bool bo = r.m_lower_open;
 
-        if (m_am.eq(a, b)) {    
+        if (m_am.eq(l.m_upper, l.m_lower)) {    
             if (ao && bo) {
                 m_am.set(w, l.m_upper);   //  ...)(...  
                 TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
@@ -775,23 +773,23 @@ namespace nlsat {
             }
             return false;  // ...)[... or ...](...
         } 
-        SASSERT(m_am.lt(a, b));
-        if (m_am.is_int(a)) {
+        SASSERT(m_am.lt(l.m_upper, l.m_lower));
+        if (m_am.is_int(l.m_upper)) {
             if (ao) {
                 TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
-                m_am.set(w, a);
+                m_am.set(w, l.m_upper);
                 return true;
             }
-            m_am.add(a, 1, w);
-            if (m_am.lt(w, b) || (m_am.eq(w, b) && bo)) {
+            m_am.add(l.m_upper, 1, w);
+            if (m_am.lt(w, l.m_lower) || (m_am.eq(w, l.m_lower) && bo)) {
                 TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
                 return true;
             }
             return false;
         }
-        SASSERT(!m_am.is_int(a));
-        m_am.ceil(a, w);
-        if (m_am.lt(w, b) || (m_am.eq(w, b) && bo)) {
+        SASSERT(!m_am.is_int(l.m_upper));
+        m_am.ceil(l.m_upper, w);
+        if (m_am.lt(w, l.m_lower) || (m_am.eq(w, l.m_lower) && bo)) {
             TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
             return true;
         }
@@ -865,8 +863,8 @@ namespace nlsat {
         int n = 0;
         scoped_anum ww(m_am);
         for (unsigned i = 1; i < num; i++) {
-            auto& l = s->m_intervals[i - 1];  // (l) (r)
-            auto& r = s->m_intervals[i];
+            const auto& l = s->m_intervals[i - 1];  // (l) (r)
+            const auto& r = s->m_intervals[i];
             if (pick_in_compliment_int_case_l_r(l, r, ww, m_am)) {
                 n++;
                 if (randomize && (n == 1 || m_rand() % n == 0)) {
