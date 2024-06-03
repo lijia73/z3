@@ -766,7 +766,7 @@ namespace nlsat {
        bool ao = l.m_upper_open;
        bool bo = r.m_lower_open;
 
-        if (m_am.eq(l.m_upper, l.m_lower)) {    
+        if (m_am.eq(l.m_upper, r.m_lower)) {    
             if (ao && bo) {
                 m_am.set(w, l.m_upper);   //  ...)(...  
                 TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
@@ -774,7 +774,7 @@ namespace nlsat {
             }
             return false;  // ...)[... or ...](...
         } 
-        SASSERT(m_am.lt(l.m_upper, l.m_lower));
+        SASSERT(m_am.lt(l.m_upper, r.m_lower));
         if (m_am.is_int(l.m_upper)) {
             if (ao) {
                 TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
@@ -782,7 +782,7 @@ namespace nlsat {
                 return true;
             }
             m_am.add(l.m_upper, 1, w);
-            if (m_am.lt(w, l.m_lower) || (m_am.eq(w, l.m_lower) && bo)) {
+            if (m_am.lt(w, r.m_lower) || (m_am.eq(w, r.m_lower) && bo)) {
                 TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
                 return true;
             }
@@ -790,7 +790,7 @@ namespace nlsat {
         }
         SASSERT(!m_am.is_int(l.m_upper));
         m_am.ceil(l.m_upper, w);
-        if (m_am.lt(w, l.m_lower) || (m_am.eq(w, l.m_lower) && bo)) {
+        if (m_am.lt(w, r.m_lower) || (m_am.eq(w, r.m_lower) && bo)) {
             TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
             return true;
         }
