@@ -66,7 +66,7 @@ namespace nlsat {
 
     class atom {
     public:
-        enum kind { EQ=0, LT, GT, ROOT_EQ=10, ROOT_LT, ROOT_GT, ROOT_LE, ROOT_GE };
+        enum kind { EQ=0, LT, GT, ROOT_EQ=10, ROOT_LT, ROOT_GT, ROOT_LE, ROOT_GE, ROOT_NE };
         static kind flip(kind k) {
             SASSERT(k == EQ || k == LT || k == GT);
             if (k == LT) return GT;

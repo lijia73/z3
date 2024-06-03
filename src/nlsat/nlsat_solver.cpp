@@ -235,6 +235,8 @@ namespace nlsat {
         // statistics
         stats                  m_stats;
 
+        bool                   m_round;
+        
         imp(solver& s, ctx& c):
             m_ctx(c),
             m_solver(s),
@@ -247,7 +249,7 @@ namespace nlsat {
             m_am(c.m_am),
             m_asm(*this, m_allocator),
             m_assignment(m_am), m_lo(m_am), m_hi(m_am),
-            m_evaluator(s, m_assignment, m_pm, m_allocator), 
+            m_evaluator(s, m_assignment, m_pm, m_allocator, m_round), 
             m_ism(m_evaluator.ism()),
             m_num_bool_vars(0),
             m_simplify(s, m_atoms, m_clauses, m_learned, m_pm),
@@ -289,6 +291,7 @@ namespace nlsat {
             m_inline_vars    = p.inline_vars();
             m_log_lemmas     = p.log_lemmas();
             m_check_lemmas   = p.check_lemmas();
+            m_round = p.round();
             m_ism.set_seed(m_random_seed);
             m_explain.set_simplify_cores(m_simplify_cores);
             m_explain.set_minimize_cores(min_cores);
@@ -1308,13 +1311,13 @@ namespace nlsat {
         /**
            \brief assign l to true, because l + (justification of) s is infeasible in RCF in the current interpretation.
         */
-        literal_vector core;
-        ptr_vector<clause> clauses;
+        literal_vector m_core;
+        ptr_vector<clause> m_clauses_buf;
         void R_propagate(literal l, interval_set const * s, bool include_l = true) {
-            m_ism.get_justifications(s, core, clauses);
+            m_ism.get_justifications(s, m_core, m_clauses_buf);
             if (include_l) 
-                core.push_back(~l);
-            auto j = mk_lazy_jst(m_allocator, core.size(), core.data(), clauses.size(), clauses.data());
+                m_core.push_back(~l);
+            auto j = mk_lazy_jst(m_allocator, m_core.size(), m_core.data(), m_clauses_buf.size(), m_clauses_buf.data());
             TRACE("nlsat_resolve", display(tout, j); display_eval(tout << "evaluated:", j));
             assign(l, j);
             SASSERT(value(l) == l_true);
@@ -1370,34 +1373,47 @@ namespace nlsat {
             save_updt_eq_trail(m_var2eq[x]);
             m_var2eq[x] = a;
         }
-        
-        /**
-           \brief Process a clause that contains nonlinear arithmetic literals
 
-           If satisfy_learned is true, then learned clauses are satisfied even if m_lazy > 0
-        */
-        bool process_arith_clause(clause const & cls, bool satisfy_learned) {
-            if (!satisfy_learned && m_lazy >= 2 && cls.is_learned()) {
-                TRACE("nlsat", tout << "skip learned\n";);
-                return true; // ignore lemmas in super lazy mode
-            }
-            SASSERT(m_xk == max_var(cls));
-            unsigned num_undef   = 0;                // number of undefined literals
-            unsigned first_undef = UINT_MAX;         // position of the first undefined literal
-            interval_set_ref first_undef_set(m_ism); // infeasible region of the first undefined literal
+        atom::kind negate_root_kind(atom::kind k) const {
+                switch (k)
+                {
+                case atom::ROOT_EQ:
+                    return atom::ROOT_NE;
+                case atom::ROOT_LT:
+                    return atom::ROOT_GE;
+                case atom::ROOT_GT:
+                    return atom::ROOT_LE;
+                case atom::ROOT_LE:
+                    return atom::ROOT_GT;
+                case atom::ROOT_GE:
+                    return atom::ROOT_LT;
+                default:
+                    UNREACHABLE();
+                }
+                UNREACHABLE();
+                return atom::ROOT_NE; // does not matter
+        }
+
+        bool is_full_or_int_full(interval_set_ref & curr_set) {
+            return m_ism.is_full(curr_set); // || (m_round && is_int(m_xk) && m_ism.is_int_full(curr_set));
+        }
+        
+        bool process_arith_clause_literal_loop(clause const & cls, unsigned & first_undef, unsigned & num_undef,  interval_set_ref& first_undef_set) {
+            bool only_int_full = false;
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
-            SASSERT(!m_ism.is_full(xk_set));
+            TRACE("nlsat", tout << "xk_set:"; m_ism.display(tout, xk_set););
+            SASSERT(!is_full_or_int_full(interval_set_ref(xk_set, m_ism)));
             for (unsigned idx = 0; idx < cls.size(); ++idx) {
                 literal l = cls[idx];
+                lbool l_value = value(l);
+                TRACE("nlsat", tout << "value for:"; display(tout, l) << " = " << l_value << "\n";);
                 checkpoint();
-                if (value(l) == l_false)
+                if (l_value == l_false)
                     continue;
-                if (value(l) == l_true)
+                if (l_value == l_true)
                     return true;  // could happen if clause is a tautology
-                CTRACE("nlsat", max_var(l) != m_xk || value(l) != l_undef, display(tout); 
-                       tout << "xk: " << m_xk << ", max_var(l): " << max_var(l) << ", l: "; display(tout, l) << "\n";
-                       display(tout, cls) << "\n";);
-                SASSERT(value(l) == l_undef);
+                TRACE("nlsat",        tout << "xk=" << m_xk<< " "; m_display_var(tout, m_xk) << ",literal l: "; display(tout, l) << "\n";);
+                SASSERT(l_value == l_undef);
                 SASSERT(max_var(l) == m_xk);
                 bool_var b = l.var();
                 atom * a   = m_atoms[b];
@@ -1412,7 +1428,11 @@ namespace nlsat {
                     SASSERT(is_satisfied(cls));
                     return true;
                 }
-                if (m_ism.is_full(curr_set)) {
+                if (is_full_or_int_full(curr_set)) {
+                    if (!m_ism.is_full(curr_set)) {
+                        TRACE("nlsat_inf_set",  tout << ", int infeasible\n"; );
+                        only_int_full = true;
+                    }
                     TRACE("nlsat_inf_set", tout << "infeasible set is R, skip literal\n";);
                     R_propagate(~l, nullptr);
                     continue;
@@ -1424,20 +1444,45 @@ namespace nlsat {
                 }
                 interval_set_ref tmp(m_ism);
                 tmp = m_ism.mk_union(curr_set, xk_set);
-                if (m_ism.is_full(tmp)) {
-                    TRACE("nlsat_inf_set", tout << "infeasible set + current set = R, skip literal\n";
-                          display(tout, cls) << "\n";
-                          m_ism.display(tout, tmp); tout << "\n";
-                          );
+                TRACE("nlsat_inf_set", tout << "tmp:"; m_ism.display(tout, tmp) << "\n";);
+                if (is_full_or_int_full(tmp)) {
+                    if (!m_ism.is_full(tmp)) {
+                        TRACE("nlsat_inf_set",  tout << ", int infeasible\n"; );
+                        only_int_full = true;
+                    }
+
+                    TRACE("nlsat_inf_set",  tout << "infeasible set is R, skip literal\n";  m_ism.display(tout, tmp); tout << "\n"; );
                     R_propagate(~l, tmp, false);
                     continue;
                 }
+
                 num_undef++;
                 if (first_undef == UINT_MAX) {
                     first_undef = idx;
                     first_undef_set = curr_set;
                 }
             }
+            return false;
+        }
+        
+        /**
+           \brief Process a clause that contains nonlinear arithmetic literals
+
+           If satisfy_learned is true, then learned clauses are satisfied even if m_lazy > 0
+        */
+        bool process_arith_clause(clause const & cls, bool satisfy_learned) {
+            if (!satisfy_learned && m_lazy >= 2 && cls.is_learned()) {
+                TRACE("nlsat", tout << "skip learned\n";);
+                return true; // ignore lemmas in super lazy mode
+            }
+            TRACE("nlsat", "cls = ";      display(tout, cls) << "\n";);
+
+            SASSERT(m_xk == max_var(cls));
+            unsigned num_undef = 0; // number of undefined literals
+            unsigned first_undef = UINT_MAX;         // position of the first undefined literal
+            interval_set_ref first_undef_set(m_ism); // infeasible region of the first undefined literal
+            if (process_arith_clause_literal_loop( cls, first_undef, num_undef,  first_undef_set))
+                return true;
             TRACE("nlsat_inf_set", tout << "num_undef: " << num_undef << "\n";);
             if (num_undef == 0) 
                 return false;
@@ -1518,7 +1563,7 @@ namespace nlsat {
         void select_witness() {
             scoped_anum w(m_am);
             SASSERT(!m_ism.is_full(m_infeasible[m_xk]));
-            m_ism.peek_in_complement(m_infeasible[m_xk], is_int(m_xk), w, m_randomize);
+            m_ism.pick_in_compliment(m_infeasible[m_xk], m_round && is_int(m_xk), w, m_randomize);
             TRACE("nlsat", 
                   tout << "infeasible intervals: "; m_ism.display(tout, m_infeasible[m_xk]); tout << "\n";
                   tout << "assigning "; m_display_var(tout, m_xk) << "(x" << m_xk << ") -> " << w << "\n";);
@@ -1612,10 +1657,34 @@ namespace nlsat {
                 }
                 else {
                     select_witness();
+                    SASSERT(bool_assignments_are_correct());
                 }
             }
         }
 
+        bool bool_assignments_are_correct() {
+            for (unsigned b = 0; b < m_bvalues.size(); b++) {
+                atom *a = m_atoms[b];
+                if (a == nullptr) continue;
+                if (m_bvalues[b] == l_undef) continue;
+                auto rs = to_lbool( m_evaluator.eval(a, false));
+                if (m_bvalues[b] != rs) {
+                    TRACE("nlsat", tout << "diff in assignments\n";
+                          tout << "m_bvalues[" << b << "]:" << m_bvalues[b] << "\n";
+                          tout << "rs:" << rs << "\n";
+                          tout << "atom a:"; display_atom(tout, b) << "\n";
+                          );
+                    // call to trace
+                    rs =  to_lbool( m_evaluator.eval(a, false));
+
+                    TRACE("nlsat", tout << "exiting\n";);
+                    exit(1);
+                    return false;
+                }
+            }
+            return true;
+        }
+        
         void gc() {
             if (m_learned.size() <= 4*m_clauses.size())
                 return;

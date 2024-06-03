@@ -361,7 +361,7 @@ namespace nlsat {
 
         sign_table m_sign_table_tmp;
 
-        imp(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator):
+        imp(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator, bool round):
             m_solver(s),
             m_assignment(x2v),
             m_pm(pm),
@@ -431,7 +431,7 @@ namespace nlsat {
                       tout << "No roots\n";
                   }
                   else {
-                      tout << "Roots for ";
+                      tout << "Roots as intervals:";
                       for (unsigned i = 0; i < roots.size(); ++i) {
                           m_am.display_interval(tout, roots[i]); tout << " "; 
                       }
@@ -489,10 +489,10 @@ namespace nlsat {
             return sign;
         }
         
-        interval_set_ref infeasible_intervals(ineq_atom * a, bool neg, clause const* cls) {
+        interval_set_ref infeasible_intervals_for_ineq_atom(ineq_atom * a, bool neg, clause const* cls) {
             sign_table & table = m_sign_table_tmp;
             table.reset();
-            TRACE("nlsat_evaluator", m_solver.display(tout, *a) << "\n";);
+            TRACE("nlsat_evaluator", tout << "neg:" << neg << "\n";m_solver.display(tout, *a) << "\n";);
             unsigned num_ps = a->size();
             var x = a->max_var();
             for (unsigned i = 0; i < num_ps; i++) {
@@ -590,14 +590,37 @@ namespace nlsat {
                     } 
                 }
             }
-            TRACE("nlsat_evaluator", tout << "interval_set: " << result << "\n";);
+            
+            TRACE("nlsat_evaluator", tout << "interval_set for x"<< x <<": " << result << "\n"; );
             return result;
         }
 
-        interval_set_ref infeasible_intervals(root_atom * a, bool neg, clause const* cls) {
+        atom::kind negate_root_kind(atom::kind k) const {
+                switch (k)
+                {
+                case atom::ROOT_EQ:
+                    return atom::ROOT_NE;
+                case atom::ROOT_LT:
+                    return atom::ROOT_GE;
+                case atom::ROOT_GT:
+                    return atom::ROOT_LE;
+                case atom::ROOT_LE:
+                    return atom::ROOT_GT;
+                case atom::ROOT_GE:
+                    return atom::ROOT_LT;
+                default:
+                    UNREACHABLE();
+                }
+                UNREACHABLE();
+                return atom::ROOT_NE; // does not matter
+        }
+
+        interval_set_ref infeasible_intervals_for_root_atom(root_atom * a, bool neg, clause const* cls) {
+            TRACE("nlsat_evaluator", tout << "neg:" << neg << "\n";m_solver.display(tout, *a) << "\n";);
             atom::kind k = a->get_kind();
-            unsigned i = a->i();
-            SASSERT(i > 0);
+            if (neg) 
+                k = negate_root_kind(k);
+            SASSERT(a->i() > 0);
             literal jst(a->bvar(), neg);
             anum dummy;
             scoped_anum_vector & roots = m_tmp_values;
@@ -607,9 +630,10 @@ namespace nlsat {
             // even when the maximal variable is assigned. I need this feature to minimize conflict cores.
             m_am.isolate_roots(polynomial_ref(a->p(), m_pm), undef_var_assignment(m_assignment, x), roots);
             interval_set_ref result(m_ism);
-
-            if (i > roots.size()) {
-                // p does have sufficient roots
+            // We look for infeasible intervals in the compliment of the feasible intervals.
+            if (a->i() > roots.size()) {
+                TRACE("nlsat_evaluator", tout << "a->i()=" << a->i() << " out of bounds\n";);
+                // p does not have sufficient roots
                 // atom is false by definition
                 if (neg) {
                     result = m_ism.mk_empty(); 
@@ -619,13 +643,15 @@ namespace nlsat {
                 }
             }
             else {
-                anum const & r_i = roots[i-1];
+                anum const & r_i = roots[a->i() - 1];
+                                    
+                TRACE("nlsat_evaluator", tout << "r_i ="; m_am.display_root(tout, r_i) << "\n";);
                 switch (k) {
+                case atom::ROOT_NE:
+                    result = m_ism.mk(false, false, r_i, false, false, r_i, jst, cls); // [r_i, r_i]
+                    break;
                 case atom::ROOT_EQ:
-                    if (neg) {
-                        result = m_ism.mk(false, false, r_i, false, false, r_i, jst, cls); // [r_i, r_i]
-                    }
-                    else {
+                    {
                         interval_set_ref s1(m_ism), s2(m_ism);
                         s1 = m_ism.mk(true, true, dummy, true, false, r_i, jst, cls); // (-oo, r_i)
                         s2 = m_ism.mk(true, false, r_i, true, true, dummy, jst, cls); // (r_i, oo)
@@ -633,45 +659,40 @@ namespace nlsat {
                     }
                     break;
                 case atom::ROOT_LT:
-                    if (neg)
-                        result = m_ism.mk(true, true, dummy, true, false, r_i, jst, cls); // (-oo, r_i)
-                    else
-                        result = m_ism.mk(false, false, r_i, true, true, dummy, jst, cls); // [r_i, oo)
+                    TRACE("nlsat_evaluator", tout << "LT\n";);
+                    result = m_ism.mk(false, false, r_i, true, true, dummy, jst, cls); // [r_i, oo)
                     break;
                 case atom::ROOT_GT:
-                    if (neg) 
-                        result = m_ism.mk(true, false, r_i, true, true, dummy, jst, cls); // (r_i, oo)
-                    else
-                        result = m_ism.mk(true, true, dummy, false, false, r_i, jst, cls); // (-oo, r_i]
+                    TRACE("nlsat_evaluator", tout << "GT\n";);
+                    result = m_ism.mk(true, true, dummy, false, false, r_i, jst, cls);  // (-oo, r_i]
                     break;
-                case atom::ROOT_LE:
-                    if (neg)
-                        result = m_ism.mk(true, true, dummy, false, false, r_i, jst, cls); // (-oo, r_i]
-                    else
-                        result = m_ism.mk(true, false, r_i, true, true, dummy, jst, cls); // (r_i, oo)
+                case atom::ROOT_LE: // (r_i, oo)
+                    TRACE("nlsat_evaluator", tout << "LE\n";);
+                    result = m_ism.mk(true, false, r_i, true, true, dummy, jst, cls);
                     break;
-                case atom::ROOT_GE:
-                    if (neg) 
-                        result = m_ism.mk(false, false, r_i, true, true, dummy, jst, cls); // [r_i, oo)
-                    else
-                        result = m_ism.mk(true, true, dummy, true, false, r_i, jst, cls); // (-oo, r_i)
+                case atom::ROOT_GE: // (-oo, r_i)
+                    TRACE("nlsat_evaluator", tout << "GE\n";);
+                    result = m_ism.mk(true, true, dummy, true, false , r_i, jst, cls);                        
                     break;
                 default:
                     UNREACHABLE();
                     break;
                 }
+                TRACE("nlsat_evaluator", tout << "interval_set for x" << x << ": " << result << "\n";);
             }
-            TRACE("nlsat_evaluator", tout << "interval_set: " << result << "\n";);
+            
+            TRACE("nlsat_evaluator", tout << "return interval_set for x" << x << ": " << result << "\n";);
             return result;
         }
-        
+
         interval_set_ref infeasible_intervals(atom * a,  bool neg, clause const* cls) {
-            return a->is_ineq_atom() ? infeasible_intervals(to_ineq_atom(a), neg, cls) : infeasible_intervals(to_root_atom(a), neg, cls); 
+            return a->is_ineq_atom() ? infeasible_intervals_for_ineq_atom(to_ineq_atom(a), neg, cls) :
+                infeasible_intervals_for_root_atom(to_root_atom(a), neg, cls); 
         }
     };
     
-    evaluator::evaluator(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator) {
-        m_imp = alloc(imp, s, x2v, pm, allocator);
+    evaluator::evaluator(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator, bool round) {
+        m_imp = alloc(imp, s, x2v, pm, allocator, round);
     }
 
     evaluator::~evaluator() {

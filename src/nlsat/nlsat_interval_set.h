@@ -70,7 +70,8 @@ namespace nlsat {
            \brief Return true if the set contains all real numbers.
         */
         bool is_full(interval_set const * s);
-
+        // return true if the set covers all integers
+        bool is_int_full(interval_set const*);
         /**
            `\brief Return true if s1 is a subset of s2.
         */
@@ -107,7 +108,13 @@ namespace nlsat {
            
            \pre !is_full(s)
         */
-        void peek_in_complement(interval_set const * s, bool is_int, anum & w, bool randomize);
+        void pick_in_compliment(interval_set const * s, bool is_int, anum & w, bool randomize);
+    private:
+        void pick_in_compliment_(interval_set const * s, bool is_int, anum & w, bool randomize);
+        void pick_randomly_with_no_restrictions(bool is_int, anum& w, bool randomize);
+        bool pick_in_compliment_int_case(interval_set const*, anum& w, bool randomize);
+        void pick_in_non_trivial_gaps(interval_set const * s, anum & w, bool randomize, unsigned &n);
+        void pick_in_unbounded_intervals(interval_set const * s, anum & w, bool randomize, unsigned &n);
     };
 
     typedef obj_ref<interval_set, interval_set_manager> interval_set_ref;

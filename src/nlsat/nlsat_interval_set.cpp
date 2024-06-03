@@ -269,14 +269,6 @@ namespace nlsat {
     }
 
     interval_set * interval_set_manager::mk_union(interval_set const * s1, interval_set const * s2) {
-#if 0
-        static unsigned s_count = 0;
-        s_count++;
-        if (s_count == 4470) {
-            enable_trace("nlsat_interval");
-            enable_trace("algebraic");
-        }
-#endif
         TRACE("nlsat_interval", tout << "mk_union\ns1: "; display(tout, s1); tout << "\ns2: "; display(tout, s2); tout << "\n";);
         if (s1 == nullptr || s1 == s2)
             return const_cast<interval_set*>(s2);
@@ -684,10 +676,8 @@ namespace nlsat {
         return new_set;
     }
 
-    void interval_set_manager::peek_in_complement(interval_set const * s, bool is_int, anum & w, bool randomize) {
-        SASSERT(!is_full(s));
-        if (s == nullptr) {
-            if (randomize) {
+    void interval_set_manager::pick_randomly_with_no_restrictions(bool is_int, anum & w, bool randomize) {
+           if (randomize) {
                 int num = m_rand() % 2 == 0 ? 1 : -1;
 #define MAX_RANDOM_DEN_K 4
                 int den_k = (m_rand() % MAX_RANDOM_DEN_K);
@@ -696,48 +686,227 @@ namespace nlsat {
                 m_am.qm().set(_w, num, den);
                 m_am.set(w, _w);
             }
-            else {
+           else {
                 m_am.set(w, 0);
             }
-            return;
-        }
-        
-        unsigned n = 0;
-        
-        unsigned num = num_intervals(s);
+    }
+
+    void interval_set_manager::pick_in_unbounded_intervals(interval_set const* s, anum& w, bool randomize, unsigned &n) {
         if (!s->m_intervals[0].m_lower_inf) {
-            // lower is not -oo
+            SASSERT(n==0);
             n++;
+            // lower is finite, and we can pick in (-oo, m_lower)
             m_am.int_lt(s->m_intervals[0].m_lower, w);
             if (!randomize)
                 return;
         }
+        unsigned num = s->m_num_intervals;
         if (!s->m_intervals[num-1].m_upper_inf) {
-            // upper is not oo
             n++;
-            if (n == 1 || m_rand()%n == 0)
+            if (m_rand()%n ==0) // upper is finite, so we look int (m_upper, oo)             
                 m_am.int_gt(s->m_intervals[num-1].m_upper, w);
-            if (!randomize)
-                return;
+            
         }
-        
-        // Try to find a gap that is not an unit.
-        for (unsigned i = 1; i < num; i++) {
+    }
+
+    void interval_set_manager::pick_in_non_trivial_gaps(interval_set const *s, anum& w, bool randomize, unsigned &n) {
+        // Look for  a gap with some interior
+        for (unsigned i = 1; i < s->m_num_intervals; i++) {
             if (m_am.lt(s->m_intervals[i-1].m_upper, s->m_intervals[i].m_lower)) {
                 n++;
                 if (n == 1 || m_rand()%n == 0)
                     m_am.select(s->m_intervals[i-1].m_upper, s->m_intervals[i].m_lower, w);
                 if (!randomize)
                     return;
+            }            
+        }
+    }
+
+    bool belongs_to_interval( const anum &w, interval const &i, anum_manager& am) {
+        if (i.m_lower_inf && i.m_upper_inf) {
+            // If the interval is (-inf, inf), then any number belongs to it
+            return true;
+        }
+        auto &l = i.m_lower; auto &u = i.m_upper;
+
+        if (!i.m_lower_inf && i.m_upper_inf) {
+            // (l, oo) or [l, oo)
+            return am.lt(l, w) || (!i.m_lower_open && am.eq(l,w));
+        }
+
+        if (i.m_lower_inf && !i.m_upper_inf) {            
+            // (-oo, u)
+            return am.lt(w, u) || (!i.m_upper_open && am.eq(w, u));
+        }
+
+        SASSERT(!(i.m_lower_inf || i.m_upper_inf)); // non-infinite nterval
+        
+        return (am.lt(l, w) || (!i.m_lower_open && am.eq(l,w))) && 
+            (am.lt(w, u) || (!i.m_upper_open && am.eq(w, u)));
+
+        return false;
+    }
+    
+    bool belongs_to(const anum &w, interval_set const *s, anum_manager& am) {
+        if (s == nullptr)
+            return false;
+         for (unsigned i = 0; i < s->m_num_intervals; i++) {
+             if (belongs_to_interval(w, s->m_intervals[i], am))
+                 return true;
+         }            
+         
+         return false;
+    }
+    
+    void interval_set_manager::pick_in_compliment(interval_set const * s, bool is_int, anum & w, bool randomize) {
+         pick_in_compliment_(s, is_int, w, randomize);
+    }
+    
+   bool pick_in_compliment_int_case_l_r(const interval &l, const interval &r, anum& w, anum_manager & m_am) {
+       bool ao = l.m_upper_open;
+       bool bo = r.m_lower_open;
+
+        if (m_am.eq(l.m_upper, l.m_lower)) {    
+            if (ao && bo) {
+                m_am.set(w, l.m_upper);   //  ...)(...  
+                TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
+                return true;
+            }
+            return false;  // ...)[... or ...](...
+        } 
+        SASSERT(m_am.lt(l.m_upper, l.m_lower));
+        if (m_am.is_int(l.m_upper)) {
+            if (ao) {
+                TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
+                m_am.set(w, l.m_upper);
+                return true;
+            }
+            m_am.add(l.m_upper, 1, w);
+            if (m_am.lt(w, l.m_lower) || (m_am.eq(w, l.m_lower) && bo)) {
+                TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
+                return true;
+            }
+            return false;
+        }
+        SASSERT(!m_am.is_int(l.m_upper));
+        m_am.ceil(l.m_upper, w);
+        if (m_am.lt(w, l.m_lower) || (m_am.eq(w, l.m_lower) && bo)) {
+            TRACE("nlsat_interval_set_pick", tout << "found w:"; m_am.display_decimal(tout, w) << "\n";);
+            return true;
+        }
+        return false;
+    }
+
+    bool has_int_in_the_gap(const interval &l, const interval &r, anum_manager & m_am) {
+        TRACE("nlsat_interval_set_pick", tout << "l, r:"; display(tout, m_am, l); tout <<","; display(tout, m_am, r);  tout << "\n";);
+        if (m_am.eq(l.m_upper, r.m_lower))  {
+            /*  ...)(...  */            
+            if (l.m_upper_open && r.m_lower_open && m_am.is_int(l.m_upper)) { 
+                TRACE("nlsat_interval_set_pick", tout << "found a gap containing int \n";);
+                return true;
+            }
+            return false;  // ...)[... or ...](...
+        } 
+        const auto& a = l.m_upper;
+        const auto& b = r.m_lower;
+        SASSERT(m_am.lt(a, b)); 
+        scoped_anum t(m_am);
+        m_am.add(a, 1, t);
+        if (m_am.lt(t, b)) 
+            return true;  // the length of the interval is greater than 1
+        
+        if (m_am.is_int(a)) { 
+            if (l.m_upper_open) {
+               TRACE("nlsat_interval_set_pick", tout << "found a gap containing int\n";);
+               return true; 
+               
+            }
+		
+                // the only candidate now is a+1, becase a+2 is too large, and a+1 feasible only if 
+                // b is int and r.m_lower_open
+			SASSERT(!m_am.is_int(b)|| m_am.eq(b, t));
+            return r.m_lower_open && m_am.is_int(b);
+        }
+        SASSERT(!m_am.is_int(a));
+        m_am.ceil(a, t);
+        bool ret = m_am.lt(t, b) || (m_am.eq(t, b) && r.m_lower_open);
+        if (ret) {
+            TRACE("nlsat_interval_set_pick", tout << "found a gap containing int\n";);            
+        } else {
+            TRACE("nlsat_interval_set_pick", tout << "cannot pick an int\n";);
+        }
+        return ret;
+    }   
+
+    bool interval_set_manager::is_int_full(interval_set const *s)  {
+        if (s == nullptr)
+            return false;
+        unsigned num = s->m_num_intervals;
+        if (s->m_intervals[0].m_lower_inf == false || s->m_intervals[num-1].m_upper_inf == false)
+            return false;
+        for (unsigned i = 1; i < num; i++) {
+            auto& l = s->m_intervals[i - 1];  // (l) (r)
+            auto& r = s->m_intervals[i];
+            if (has_int_in_the_gap(l, r, m_am)) {
+                return false;
             }
         }
+        TRACE("nlsat_interval_set_pick", tout << "covers int:"; display(tout, s) << "\n";);
+        return true;
+     }
+    
+    
+    bool interval_set_manager::pick_in_compliment_int_case(interval_set const * s, anum & w, bool randomize) {
+        TRACE("nlsat_interval_set_pick", tout << "picking an int:"; display(tout, s) << "\n";);
+
+        unsigned num  = s->m_num_intervals;
+        SASSERT(s->m_intervals[0].m_lower_inf && s->m_intervals[num-1].m_upper_inf);
+        int n = 0;
+        scoped_anum ww(m_am);
+        for (unsigned i = 1; i < num; i++) {
+            const auto& l = s->m_intervals[i - 1];  // (l) (r)
+            const auto& r = s->m_intervals[i];
+            if (pick_in_compliment_int_case_l_r(l, r, ww, m_am)) {
+                n++;
+                if (randomize && (n == 1 || m_rand() % n == 0)) {
+                    m_am.set(w, ww);
+                    TRACE("nlsat_interval_set_pick", tout << "i:" << i << "\n";);
+                }
+            }
+        }
+        CTRACE("nlsat_interval_set_pick", n > 0, tout << "pick int:"; m_am.display_decimal(tout, w); tout <<  " in "; display(tout, s) << "\n";);
+        return n > 0;
+    }
+    
+    void interval_set_manager::pick_in_compliment_(interval_set const * s, bool is_int, anum & w, bool randomize) {
+        TRACE("nlsat_interval_set_pick", tout << "start look into:"; display(tout, s)<<"\n";);
+        SASSERT(!is_full(s));
+        if (s == nullptr) {
+            pick_randomly_with_no_restrictions(is_int, w, randomize);
+            return;
+        }
+        unsigned n = 0;
+        pick_in_unbounded_intervals(s, w, randomize, n);
+
+        if (is_int) {
+            if (n > 0) {
+                SASSERT(m_am.is_int(w));
+                return;
+            }
+            if (pick_in_compliment_int_case(s, w, randomize)) {
+                SASSERT(! belongs_to(w, s, m_am));
+                return;
+            }
+
+        }
         
+        pick_in_non_trivial_gaps(s, w, randomize, n);
         if (n > 0)
             return;
         
-        // Try to find a rational
+        // Try to find a rational: todo - randomise
         unsigned irrational_i = UINT_MAX;
-        for (unsigned i = 1; i < num; i++) {
+        for (unsigned i = 1; i < s->m_num_intervals; i++) {
             if (s->m_intervals[i-1].m_upper_open && s->m_intervals[i].m_lower_open) {
                 SASSERT(m_am.eq(s->m_intervals[i-1].m_upper, s->m_intervals[i].m_lower)); // otherwise we would have found it in the previous step
                 if (m_am.is_rational(s->m_intervals[i-1].m_upper)) {                    
@@ -745,11 +914,12 @@ namespace nlsat {
                     return;
                 }
                 if (irrational_i == UINT_MAX)
-                    irrational_i = i-1;
+                    irrational_i = i - 1;
             }
         }
+
         SASSERT(irrational_i != UINT_MAX);
-        // Last option: peek irrational witness :-(
+        // Last option: pick irrational witness :-(
         SASSERT(s->m_intervals[irrational_i].m_upper_open && s->m_intervals[irrational_i+1].m_lower_open);
         m_am.set(w, s->m_intervals[irrational_i].m_upper);
     }
