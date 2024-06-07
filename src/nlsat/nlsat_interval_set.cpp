@@ -760,6 +760,7 @@ namespace nlsat {
     
     void interval_set_manager::pick_in_compliment(interval_set const * s, bool is_int, anum & w, bool randomize) {
          pick_in_compliment_(s, is_int, w, randomize);
+         SASSERT(! belongs_to(w, s, m_am));
     }
     
    bool pick_in_compliment_int_case_l_r(const interval &l, const interval &r, anum& w, anum_manager & m_am) {
@@ -854,7 +855,22 @@ namespace nlsat {
         TRACE("nlsat_interval_set_pick", tout << "covers int:"; display(tout, s) << "\n";);
         return true;
      }
-    
+
+    void interval_set_manager::cover_feasible_parts(vector<rational> & bounds, interval_set const *s) {
+        unsigned num = s->m_num_intervals;
+        for (unsigned i = 1; i < num; i++) {
+            const auto& l = s->m_intervals[i - 1];  // (l) (r)
+            const auto& r = s->m_intervals[i];
+            if (l.m_upper_open && r.m_lower_open || m_am.lt(l.m_upper, r.m_lower)) {
+                scoped_anum w(m_am);
+                m_am.floor(l.m_upper, w);
+                rational lo; m_am.to_rational(w, lo);
+                bounds.push_back(lo);
+            }
+        }
+
+    }   
+
     
     bool interval_set_manager::pick_in_compliment_int_case(interval_set const * s, anum & w, bool randomize) {
         TRACE("nlsat_interval_set_pick", tout << "picking an int:"; display(tout, s) << "\n";);

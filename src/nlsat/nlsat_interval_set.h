@@ -109,6 +109,7 @@ namespace nlsat {
            \pre !is_full(s)
         */
         void pick_in_compliment(interval_set const * s, bool is_int, anum & w, bool randomize);
+        void cover_feasible_parts(vector<rational> & bounds, interval_set const*);
     private:
         void pick_in_compliment_(interval_set const * s, bool is_int, anum & w, bool randomize);
         void pick_randomly_with_no_restrictions(bool is_int, anum& w, bool randomize);

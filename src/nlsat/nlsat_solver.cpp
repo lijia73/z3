@@ -18,6 +18,7 @@ Author:
 Revision History:
 
 --*/
+int abcd = 0;
 #include "util/z3_exception.h"
 #include "util/chashtable.h"
 #include "util/id_gen.h"
@@ -1399,6 +1400,7 @@ namespace nlsat {
         }
         
         bool process_arith_clause_literal_loop(clause const & cls, unsigned & first_undef, unsigned & num_undef,  interval_set_ref& first_undef_set) {
+            abcd ++;
             bool only_int_full = false;
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
             TRACE("nlsat", tout << "xk_set:"; m_ism.display(tout, xk_set););
@@ -1511,6 +1513,7 @@ namespace nlsat {
            If satisfy_learned is true, then (arithmetic) learned clauses are satisfied even if m_lazy > 0
         */
         bool process_clause(clause const & cls, bool satisfy_learned) {
+            TRACE("nlsat", tout << "cls:"; display(tout, cls) << "\n";);
             if (is_satisfied(cls))
                 return true;
             if (m_xk == null_var)
@@ -1599,7 +1602,6 @@ namespace nlsat {
             TRACE("nlsat", display_smt2(tout););
             m_bk = 0;
             m_xk = null_var;
-
             while (true) {
                 if (should_reorder())
                     do_reorder();
@@ -1613,6 +1615,7 @@ namespace nlsat {
                     do_simplify();
 
                 CASSERT("nlsat", check_satisfied());
+                unsigned trail_size = m_trail.size();                    
                 if (m_xk == null_var) {
                     peek_next_bool_var();
                     if (m_bk == null_bool_var) 
@@ -1636,12 +1639,15 @@ namespace nlsat {
                           tout << "\n";);
                     checkpoint();
                     clause * conflict_clause;
-                    if (m_xk == null_var)
+                    if (m_xk == null_var) {
                         conflict_clause = process_clauses(m_bwatches[m_bk]);
-                    else 
+                    }
+                    else {
                         conflict_clause = process_clauses(m_watches[m_xk]);
+                    }
                     if (conflict_clause == nullptr)
                         break;
+                    
                     if (!resolve(*conflict_clause)) 
                         return l_false;                    
                     if (m_stats.m_conflicts >= m_max_conflicts)
@@ -1658,10 +1664,57 @@ namespace nlsat {
                 else {
                     select_witness();
                     SASSERT(bool_assignments_are_correct());
+                    if (incorrect_int_assignment_on_xk()) {
+                        vector<rational> bounds;
+                        m_ism.cover_feasible_parts(bounds, m_infeasible[m_xk]);
+                        var new_xk = m_xk == 0? null_var : m_xk - 1;
+                        scoped_anum val_new_xk(m_am); 
+                        if (new_xk != null_var) {
+                           val_new_xk = m_assignment.value(new_xk);
+                        }                         
+                        m_assignment.reset(m_xk);
+                        undo_until_size(trail_size);
+
+                        if (new_xk != null_bool_var)
+                            m_assignment.set_core(new_xk, val_new_xk);
+                        create_clause_to_force_int(bounds, new_xk + 1);                                                
+                    } 
                 }
             }
         }
 
+        void create_clause_to_force_int(vector<rational> & lbounds, var x) {
+            polynomial_ref mult(m_pm);
+            rational one(1);
+            mult = m_pm.mk_const(rational(1));
+            
+            for ( const auto& lo: lbounds) {
+                rational hi = lo + 1; // rational::one();
+                polynomial_ref p(m_pm);
+                p = m_pm.mk_linear(1, &one, &x, -lo);
+                TRACE("nlsat", tout << "mult:" << mult << "\n";);
+                mult = mult * p; // p *= (x - lo)
+                TRACE("nlsat", tout << "mult:" << mult << "\n";);
+                p = m_pm.mk_linear(1, &one, &x, -hi);
+                mult = mult * p; // p *= (x - hi)
+                TRACE("nlsat", tout << "mult:" << mult << "\n";);
+            }
+            TRACE("nlsat", tout << "mult:" << mult << "\n";); 
+            bool is_even = false;                        
+            poly* p1 = mult.get();
+            m_lemma.reset();            
+            m_lemma.push_back(~mk_ineq_literal(atom::LT, 1, &p1, &is_even));
+            clause * cls = mk_clause(m_lemma.size(), m_lemma.data(), true, nullptr);
+            TRACE("nlsat", tout << "cover non-integral parts: "; display(tout, *cls) << "\n";);
+        }
+        
+        bool incorrect_int_assignment_on_xk() {
+            if (!is_int(m_xk)) return false;
+            if (m_assignment.is_assigned(m_xk) == false)
+                return false;
+            return !m_am.is_int(m_assignment.value(m_xk));
+        }
+        
         bool bool_assignments_are_correct() {
             for (unsigned b = 0; b < m_bvalues.size(); b++) {
                 atom *a = m_atoms[b];
@@ -1758,6 +1811,14 @@ namespace nlsat {
                 << " :propagations " << m_stats.m_propagations 
                 << " :clauses " << m_clauses.size() 
                 << " :learned " << m_learned.size() << ")\n");
+        }
+
+
+        clause * mk_branch_on_xk() {
+            std::cout << "abcd=" << abcd << "\n";
+            NOT_IMPLEMENTED_YET();
+            auto val = m_assignment.value(m_xk);
+            return nullptr;
         }
 
 
@@ -3767,10 +3828,12 @@ namespace nlsat {
         std::ostream& display_smt2_arith_decls(std::ostream & out) const {
             unsigned sz = m_is_int.size();
             for (unsigned i = 0; i < sz; i++) {
-                if (is_int(i))
-                    out << "(declare-fun x" << i << " () Int)\n";
-                else
-                    out << "(declare-fun x" << i << " () Real)\n";
+                if (is_int(i)) {
+                    out << "(declare-fun "; m_display_var(out, i) << " () Int)\n";
+                }
+                else {
+                    out << "(declare-fun "; m_display_var(out, i) << " () Real)\n";
+                }
             }
             return out;
         }
