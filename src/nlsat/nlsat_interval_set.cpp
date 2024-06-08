@@ -856,7 +856,7 @@ namespace nlsat {
         return true;
      }
 
-    void interval_set_manager::cover_feasible_parts(vector<rational> & bounds, interval_set const *s) {
+    void interval_set_manager::fill_lower_bounds_to_cover_feasible_parts(vector<rational> & bounds, interval_set const *s) {
         unsigned num = s->m_num_intervals;
         for (unsigned i = 1; i < num; i++) {
             const auto& l = s->m_intervals[i - 1];  // (l) (r)

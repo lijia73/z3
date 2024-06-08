@@ -996,6 +996,7 @@ namespace nlsat {
             std::sort(cls->begin(), cls->end(), lit_lt(*this));
             TRACE("nlsat", display(tout << " after sort:\n", *cls) << "\n";);
             if (learned && m_log_lemmas) {
+                verbose_stream() << ";Lemma from " << __FILE__ << "," << __LINE__<< "\n";
                 log_lemma(verbose_stream(), *cls);
             }
             if (learned && m_check_lemmas && false) {
@@ -1400,7 +1401,6 @@ namespace nlsat {
         }
         
         bool process_arith_clause_literal_loop(clause const & cls, unsigned & first_undef, unsigned & num_undef,  interval_set_ref& first_undef_set) {
-            abcd ++;
             bool only_int_full = false;
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
             TRACE("nlsat", tout << "xk_set:"; m_ism.display(tout, xk_set););
@@ -1494,8 +1494,7 @@ namespace nlsat {
                 assign(cls[first_undef], mk_clause_jst(&cls)); 
                 updt_infeasible(first_undef_set);
             }
-            else if ( satisfy_learned ||
-                     !cls.is_learned() /* must always satisfy input clauses */ ||
+            else if ( satisfy_learned || !cls.is_learned() /* must always satisfy input clauses */ ||
                       m_lazy == 0 /* if not in lazy mode, we also satiffy lemmas */) {
                 decide(cls[first_undef]);
                 updt_infeasible(first_undef_set);
@@ -1503,6 +1502,15 @@ namespace nlsat {
             else {
                 TRACE("nlsat_lazy", tout << "skipping clause, satisfy_learned: " << satisfy_learned << ", cls.is_learned(): " << cls.is_learned()
                       << ", lazy: " << m_lazy << "\n";);
+            }
+            if (incorrect_int_assignment_on_xk()) {
+                m_assignment.reset(m_xk);
+                vector<rational> lbounds;
+                m_ism.fill_lower_bounds_to_cover_feasible_parts(lbounds, m_infeasible[m_xk]);
+                clause * cls = create_clause_to_force_int(lbounds, m_xk);                                            
+                bool pcls = process_clause(*cls, false);
+                SASSERT(pcls == false);
+                return false;
             }
             return true;
         }
@@ -1531,6 +1539,15 @@ namespace nlsat {
                 if (!process_clause(*c, false))
                     return c;
             }
+            if (m_xk != null_var && m_ism.is_int_full(m_infeasible[m_xk])) {
+                vector<rational> lbounds;
+                m_ism.fill_lower_bounds_to_cover_feasible_parts(lbounds, m_infeasible[m_xk]);
+                clause * cls = create_clause_to_force_int(lbounds, m_xk);                                            
+                bool pcls = process_clause(*cls, false);
+                SASSERT(pcls == false);
+                return cls;                
+            }
+
             return nullptr; // succeeded
         }
 
@@ -1603,6 +1620,8 @@ namespace nlsat {
             m_bk = 0;
             m_xk = null_var;
             while (true) {
+                abcd ++;
+            
                 if (should_reorder())
                     do_reorder();
 
@@ -1615,7 +1634,6 @@ namespace nlsat {
                     do_simplify();
 
                 CASSERT("nlsat", check_satisfied());
-                unsigned trail_size = m_trail.size();                    
                 if (m_xk == null_var) {
                     peek_next_bool_var();
                     if (m_bk == null_bool_var) 
@@ -1629,6 +1647,7 @@ namespace nlsat {
                     return l_true;
                 }
                 while (true) {
+                    
                     TRACE("nlsat_verbose", tout << "processing variable "; 
                           if (m_xk != null_var) {
                               m_display_var(tout, m_xk); tout << " " << m_watches[m_xk].size();
@@ -1664,26 +1683,12 @@ namespace nlsat {
                 else {
                     select_witness();
                     SASSERT(bool_assignments_are_correct());
-                    if (incorrect_int_assignment_on_xk()) {
-                        vector<rational> bounds;
-                        m_ism.cover_feasible_parts(bounds, m_infeasible[m_xk]);
-                        var new_xk = m_xk == 0? null_var : m_xk - 1;
-                        scoped_anum val_new_xk(m_am); 
-                        if (new_xk != null_var) {
-                           val_new_xk = m_assignment.value(new_xk);
-                        }                         
-                        m_assignment.reset(m_xk);
-                        undo_until_size(trail_size);
-
-                        if (new_xk != null_bool_var)
-                            m_assignment.set_core(new_xk, val_new_xk);
-                        create_clause_to_force_int(bounds, new_xk + 1);                                                
-                    } 
+                     
                 }
             }
         }
 
-        void create_clause_to_force_int(vector<rational> & lbounds, var x) {
+        clause* create_clause_to_force_int(vector<rational> & lbounds, var x) {
             polynomial_ref mult(m_pm);
             rational one(1);
             mult = m_pm.mk_const(rational(1));
@@ -1706,6 +1711,7 @@ namespace nlsat {
             m_lemma.push_back(~mk_ineq_literal(atom::LT, 1, &p1, &is_even));
             clause * cls = mk_clause(m_lemma.size(), m_lemma.data(), true, nullptr);
             TRACE("nlsat", tout << "cover non-integral parts: "; display(tout, *cls) << "\n";);
+            return cls;
         }
         
         bool incorrect_int_assignment_on_xk() {
@@ -1812,15 +1818,6 @@ namespace nlsat {
                 << " :clauses " << m_clauses.size() 
                 << " :learned " << m_learned.size() << ")\n");
         }
-
-
-        clause * mk_branch_on_xk() {
-            std::cout << "abcd=" << abcd << "\n";
-            NOT_IMPLEMENTED_YET();
-            auto val = m_assignment.value(m_xk);
-            return nullptr;
-        }
-
 
         lbool search_check() {
             lbool r = l_undef;
@@ -3852,7 +3849,7 @@ namespace nlsat {
             display_smt2_arith_decls(out);
             out << "(assert (and true\n";
             for (clause* c : m_clauses) {
-                display_smt2(out, *c) << "\n";
+                display_smt2(out, *c, m_display_var) << "\n";
             }
             out << "))\n" << std::endl;
             return out;
