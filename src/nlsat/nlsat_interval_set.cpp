@@ -703,7 +703,7 @@ namespace nlsat {
         unsigned num = s->m_num_intervals;
         if (!s->m_intervals[num-1].m_upper_inf) {
             n++;
-            if (m_rand()%n ==0) // upper is finite, so we look int (m_upper, oo)             
+            if (n == 1 || m_rand()%n ==0) // upper is finite, so we look int (m_upper, oo)             
                 m_am.int_gt(s->m_intervals[num-1].m_upper, w);
             
         }
@@ -861,7 +861,7 @@ namespace nlsat {
         for (unsigned i = 1; i < num; i++) {
             const auto& l = s->m_intervals[i - 1];  // (l) (r)
             const auto& r = s->m_intervals[i];
-            if (l.m_upper_open && r.m_lower_open || m_am.lt(l.m_upper, r.m_lower)) {
+            if ((l.m_upper_open && r.m_lower_open) || m_am.lt(l.m_upper, r.m_lower)) {
                 scoped_anum w(m_am);
                 m_am.floor(l.m_upper, w);
                 rational lo; m_am.to_rational(w, lo);

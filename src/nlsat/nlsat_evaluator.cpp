@@ -361,7 +361,7 @@ namespace nlsat {
 
         sign_table m_sign_table_tmp;
 
-        imp(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator, bool round):
+        imp(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator):
             m_solver(s),
             m_assignment(x2v),
             m_pm(pm),
@@ -691,8 +691,8 @@ namespace nlsat {
         }
     };
     
-    evaluator::evaluator(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator, bool round) {
-        m_imp = alloc(imp, s, x2v, pm, allocator, round);
+    evaluator::evaluator(solver& s, assignment const & x2v, pmanager & pm, small_object_allocator & allocator) {
+        m_imp = alloc(imp, s, x2v, pm, allocator);
     }
 
     evaluator::~evaluator() {

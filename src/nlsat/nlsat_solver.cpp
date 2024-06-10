@@ -250,7 +250,7 @@ namespace nlsat {
             m_am(c.m_am),
             m_asm(*this, m_allocator),
             m_assignment(m_am), m_lo(m_am), m_hi(m_am),
-            m_evaluator(s, m_assignment, m_pm, m_allocator, m_round), 
+            m_evaluator(s, m_assignment, m_pm, m_allocator), 
             m_ism(m_evaluator.ism()),
             m_num_bool_vars(0),
             m_simplify(s, m_atoms, m_clauses, m_learned, m_pm),
@@ -1396,15 +1396,11 @@ namespace nlsat {
                 return atom::ROOT_NE; // does not matter
         }
 
-        bool is_full_or_int_full(interval_set_ref & curr_set) {
-            return m_ism.is_full(curr_set); // || (m_round && is_int(m_xk) && m_ism.is_int_full(curr_set));
-        }
-        
         bool process_arith_clause_literal_loop(clause const & cls, unsigned & first_undef, unsigned & num_undef,  interval_set_ref& first_undef_set) {
-            bool only_int_full = false;
+
             interval_set * xk_set = m_infeasible[m_xk]; // current set of infeasible interval for current variable
             TRACE("nlsat", tout << "xk_set:"; m_ism.display(tout, xk_set););
-            SASSERT(!is_full_or_int_full(interval_set_ref(xk_set, m_ism)));
+            SASSERT(!m_ism.is_full(xk_set));
             for (unsigned idx = 0; idx < cls.size(); ++idx) {
                 literal l = cls[idx];
                 lbool l_value = value(l);
@@ -1430,11 +1426,7 @@ namespace nlsat {
                     SASSERT(is_satisfied(cls));
                     return true;
                 }
-                if (is_full_or_int_full(curr_set)) {
-                    if (!m_ism.is_full(curr_set)) {
-                        TRACE("nlsat_inf_set",  tout << ", int infeasible\n"; );
-                        only_int_full = true;
-                    }
+                if (m_ism.is_full(curr_set)) {
                     TRACE("nlsat_inf_set", tout << "infeasible set is R, skip literal\n";);
                     R_propagate(~l, nullptr);
                     continue;
@@ -1447,12 +1439,7 @@ namespace nlsat {
                 interval_set_ref tmp(m_ism);
                 tmp = m_ism.mk_union(curr_set, xk_set);
                 TRACE("nlsat_inf_set", tout << "tmp:"; m_ism.display(tout, tmp) << "\n";);
-                if (is_full_or_int_full(tmp)) {
-                    if (!m_ism.is_full(tmp)) {
-                        TRACE("nlsat_inf_set",  tout << ", int infeasible\n"; );
-                        only_int_full = true;
-                    }
-
+                if (m_ism.is_full(tmp)) {
                     TRACE("nlsat_inf_set",  tout << "infeasible set is R, skip literal\n";  m_ism.display(tout, tmp); tout << "\n"; );
                     R_propagate(~l, tmp, false);
                     continue;
@@ -1477,7 +1464,7 @@ namespace nlsat {
                 TRACE("nlsat", tout << "skip learned\n";);
                 return true; // ignore lemmas in super lazy mode
             }
-            TRACE("nlsat", "cls = ";      display(tout, cls) << "\n";);
+            TRACE("nlsat", tout << "cls:";      display(tout, cls) << "\n";);
 
             SASSERT(m_xk == max_var(cls));
             unsigned num_undef = 0; // number of undefined literals
@@ -1502,15 +1489,6 @@ namespace nlsat {
             else {
                 TRACE("nlsat_lazy", tout << "skipping clause, satisfy_learned: " << satisfy_learned << ", cls.is_learned(): " << cls.is_learned()
                       << ", lazy: " << m_lazy << "\n";);
-            }
-            if (incorrect_int_assignment_on_xk()) {
-                m_assignment.reset(m_xk);
-                vector<rational> lbounds;
-                m_ism.fill_lower_bounds_to_cover_feasible_parts(lbounds, m_infeasible[m_xk]);
-                clause * cls = create_clause_to_force_int(lbounds, m_xk);                                            
-                bool pcls = process_clause(*cls, false);
-                SASSERT(pcls == false);
-                return false;
             }
             return true;
         }
@@ -1539,7 +1517,7 @@ namespace nlsat {
                 if (!process_clause(*c, false))
                     return c;
             }
-            if (m_xk != null_var && m_ism.is_int_full(m_infeasible[m_xk])) {
+            if (m_round && m_xk != null_var && is_int(m_xk) && m_ism.is_int_full(m_infeasible[m_xk])) {
                 vector<rational> lbounds;
                 m_ism.fill_lower_bounds_to_cover_feasible_parts(lbounds, m_infeasible[m_xk]);
                 clause * cls = create_clause_to_force_int(lbounds, m_xk);                                            
