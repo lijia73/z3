@@ -1522,8 +1522,8 @@ namespace nlsat {
                 m_ism.fill_lower_bounds_to_cover_feasible_parts(lbounds, m_infeasible[m_xk]);
                 clause * cls = create_clause_to_force_int(lbounds, m_xk);                                            
                 bool pcls = process_clause(*cls, false);
-                SASSERT(pcls == false);
-                return cls;                
+                if(!pcls)
+                    return cls;                
             }
 
             return nullptr; // succeeded
