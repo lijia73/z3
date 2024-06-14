@@ -1520,12 +1520,10 @@ namespace nlsat {
             if (m_round && m_xk != null_var && is_int(m_xk) && m_ism.is_int_full(m_infeasible[m_xk])) {
                 vector<rational> lbounds;
                 m_ism.fill_lower_bounds_to_cover_feasible_parts(lbounds, m_infeasible[m_xk]);
-                clause * cls = create_clause_to_force_int(lbounds, m_xk);                                            
-                bool pcls = process_clause(*cls, false);
-                if(!pcls)
-                    return cls;                
+                clause* cls = create_branches_to_force_int(lbounds, m_xk);  
+                SASSERT(cls != nullptr);
+                return cls;
             }
-
             return nullptr; // succeeded
         }
 
@@ -1666,30 +1664,19 @@ namespace nlsat {
             }
         }
 
-        clause* create_clause_to_force_int(vector<rational> & lbounds, var x) {
+        clause* create_branches_to_force_int(vector<rational> & lbounds, var x) {
             polynomial_ref mult(m_pm);
             rational one(1);
             mult = m_pm.mk_const(rational(1));
             
             for ( const auto& lo: lbounds) {
-                rational hi = lo + 1; // rational::one();
-                polynomial_ref p(m_pm);
-                p = m_pm.mk_linear(1, &one, &x, -lo);
-                TRACE("nlsat", tout << "mult:" << mult << "\n";);
-                mult = mult * p; // p *= (x - lo)
-                TRACE("nlsat", tout << "mult:" << mult << "\n";);
-                p = m_pm.mk_linear(1, &one, &x, -hi);
-                mult = mult * p; // p *= (x - hi)
-                TRACE("nlsat", tout << "mult:" << mult << "\n";);
+                clause *c = mk_branch(lo, x);
+                if (!process_clause(*c, true)) {
+                    return c;
+                }
             }
-            TRACE("nlsat", tout << "mult:" << mult << "\n";); 
-            bool is_even = false;                        
-            poly* p1 = mult.get();
-            m_lemma.reset();            
-            m_lemma.push_back(~mk_ineq_literal(atom::LT, 1, &p1, &is_even));
-            clause * cls = mk_clause(m_lemma.size(), m_lemma.data(), true, nullptr);
-            TRACE("nlsat", tout << "cover non-integral parts: "; display(tout, *cls) << "\n";);
-            return cls;
+            UNREACHABLE();
+            return nullptr;
         }
         
         bool incorrect_int_assignment_on_xk() {
@@ -1848,27 +1835,31 @@ namespace nlsat {
                 for (auto const& b : bounds) {
                     var x = b.first;
                     rational lo = b.second;
-                    rational hi = lo + 1; // rational::one();
-                    bool is_even = false;                        
-                    polynomial_ref p(m_pm);
-                    rational one(1);
-                    m_lemma.reset();
-                    p = m_pm.mk_linear(1, &one, &x, -lo);
-                    poly* p1 = p.get();
-                    m_lemma.push_back(~mk_ineq_literal(atom::GT, 1, &p1, &is_even));
-                    p = m_pm.mk_linear(1, &one, &x, -hi);
-                    poly* p2 = p.get();
-                    m_lemma.push_back(~mk_ineq_literal(atom::LT, 1, &p2, &is_even));
-                    
-                    // perform branch and bound
-                    clause * cls = mk_clause(m_lemma.size(), m_lemma.data(), true, nullptr);
+                    clause * cls = mk_branch(lo, x);
                     IF_VERBOSE(4, display(verbose_stream(), *cls) << "\n");
                     if (cls) {
-                        TRACE("nlsat", display(tout << "conflict " << lo << " " << hi, *cls); tout << "\n";);
+                        TRACE("nlsat", display(tout << "conflict " << lo << " " << lo + 1, *cls); tout << "\n";);
                     }
                 }
             }
             return r;
+        }
+
+        clause * mk_branch(const rational& lo, var x) {
+            rational hi = lo + 1; // rational::one();
+            bool is_even = false;                        
+            polynomial_ref p(m_pm);
+            rational one(1);
+            m_lemma.reset();
+            p = m_pm.mk_linear(1, &one, &x, -lo);
+            poly* p1 = p.get();
+            m_lemma.push_back(~mk_ineq_literal(atom::GT, 1, &p1, &is_even));
+            p = m_pm.mk_linear(1, &one, &x, -hi);
+            poly* p2 = p.get();
+            m_lemma.push_back(~mk_ineq_literal(atom::LT, 1, &p2, &is_even));
+                    
+            clause * cls = mk_clause(m_lemma.size(), m_lemma.data(), true, nullptr);
+            return cls;
         }
 
         bool m_reordered = false;

@@ -865,10 +865,10 @@ namespace nlsat {
                 scoped_anum w(m_am);
                 m_am.floor(l.m_upper, w);
                 rational lo; m_am.to_rational(w, lo);
-                bounds.push_back(lo);
+                if (bounds.size() == 0 || bounds[bounds.size() - 1] != lo) 
+                    bounds.push_back(lo);
             }
         }
-
     }   
 
     
