@@ -758,12 +758,12 @@ namespace nlsat {
          return false;
     }
     
-    void interval_set_manager::pick_in_compliment(interval_set const * s, bool is_int, anum & w, bool randomize) {
-         pick_in_compliment_(s, is_int, w, randomize);
+    void interval_set_manager::pick_in_complement(interval_set const * s, bool is_int, anum & w, bool randomize) {
+         pick_in_complement_(s, is_int, w, randomize);
          SASSERT(! belongs_to(w, s, m_am));
     }
     
-   bool pick_in_compliment_int_case_l_r(const interval &l, const interval &r, anum& w, anum_manager & m_am) {
+   bool pick_in_complement_int_case_l_r(const interval &l, const interval &r, anum& w, anum_manager & m_am) {
        bool ao = l.m_upper_open;
        bool bo = r.m_lower_open;
 
@@ -872,7 +872,7 @@ namespace nlsat {
     }   
 
     
-    bool interval_set_manager::pick_in_compliment_int_case(interval_set const * s, anum & w, bool randomize) {
+    bool interval_set_manager::pick_in_complement_int_case(interval_set const * s, anum & w, bool randomize) {
         TRACE("nlsat_interval_set_pick", tout << "picking an int:"; display(tout, s) << "\n";);
 
         unsigned num  = s->m_num_intervals;
@@ -882,7 +882,7 @@ namespace nlsat {
         for (unsigned i = 1; i < num; i++) {
             const auto& l = s->m_intervals[i - 1];  // (l) (r)
             const auto& r = s->m_intervals[i];
-            if (pick_in_compliment_int_case_l_r(l, r, ww, m_am)) {
+            if (pick_in_complement_int_case_l_r(l, r, ww, m_am)) {
                 n++;
                 if (randomize && (n == 1 || m_rand() % n == 0)) {
                     m_am.set(w, ww);
@@ -894,7 +894,7 @@ namespace nlsat {
         return n > 0;
     }
     
-    void interval_set_manager::pick_in_compliment_(interval_set const * s, bool is_int, anum & w, bool randomize) {
+    void interval_set_manager::pick_in_complement_(interval_set const * s, bool is_int, anum & w, bool randomize) {
         TRACE("nlsat_interval_set_pick", tout << "start look into:"; display(tout, s)<<"\n";);
         SASSERT(!is_full(s));
         if (s == nullptr) {
@@ -909,7 +909,7 @@ namespace nlsat {
                 SASSERT(m_am.is_int(w));
                 return;
             }
-            if (pick_in_compliment_int_case(s, w, randomize)) {
+            if (pick_in_complement_int_case(s, w, randomize)) {
                 SASSERT(! belongs_to(w, s, m_am));
                 return;
             }
