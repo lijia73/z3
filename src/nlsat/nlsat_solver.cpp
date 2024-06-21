@@ -2400,16 +2400,12 @@ namespace nlsat {
 
         }
 
-        /**
-           \brief Return true if the conflict was solved.
-        */
-        bool resolve(clause * conflict_clause) {
-            while (true) {
+        lbool resolve_main(clause* &conflict_clause) {
                 bool found_decision;
                 resolve_generate_lemma(conflict_clause, found_decision);
                 if (m_lemma.empty()) {
                     TRACE("nlsat", tout << "empty clause generated\n";);
-                    return false; // problem is unsat, empty clause was generated
+                    return l_false; // problem is unsat, empty clause was generated
                 }
 
                 reset_marks(); // remove marks from the literals in m_lemmas.
@@ -2425,21 +2421,32 @@ namespace nlsat {
                 if (found_decision) {
                     conflict_clause = resolve_found_decision(conflict_clause);
                     if (conflict_clause == nullptr)
-                        return true;
+                        return l_true;
                 }
                 else {
                     conflict_clause = resolve_not_found_decision();
                 }
                 NLSAT_VERBOSE(display(verbose_stream(), *conflict_clause) << "\n";);
                 if (process_clause(*conflict_clause, true))
-                    break;
+                    return l_true;
 
                 TRACE("nlsat", tout << "new clause triggered another conflict, restarting conflict resolution...\n";
                       display(tout, *conflict_clause) << "\n";
                     );
+                return l_undef;
+        }
+        
+        /**
+           \brief Return true if the conflict was solved and false if unsat
+        */
+        bool resolve(clause * conflict_clause) {
+            while (true) {
+                lbool ret = resolve_main(conflict_clause);
+                if (ret == l_false)
+                    return false;
+                if (ret == l_true)
+                    return true;
             }
-            TRACE("nlsat_resolve_done", display_assignment(tout););
-            return true;
         }
 
         bool lemma_is_clause(clause const& cls) const {
