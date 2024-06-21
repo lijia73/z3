@@ -1642,7 +1642,7 @@ namespace nlsat {
                         break;
 
                        
-                    if (!resolve(*conflict_clause)) 
+                    if (!resolve(conflict_clause)) 
                         return l_false;                    
                     if (m_stats.m_conflicts >= m_max_conflicts)
                         return l_undef;
@@ -2292,7 +2292,7 @@ namespace nlsat {
             }
         }
 
-        bool resolve_found_decision(clause *conflict_clause, clause *& new_cls) {
+        clause* resolve_found_decision(clause *conflict_clause) {
             SASSERT(scope_lvl() >= 1);
             // Case 2)
             if (is_bool_lemma(m_lemma.size(), m_lemma.data())) {
@@ -2312,13 +2312,12 @@ namespace nlsat {
             if (lemma_is_clause(*conflict_clause)) {
                 TRACE("nlsat", tout << "found decision literal in conflict clause\n";);
                 VERIFY(process_clause(*conflict_clause, true));
-                return true;
+                return nullptr;
             }
-            new_cls = mk_clause(m_lemma.size(), m_lemma.data(), true, m_lemma_assumptions.get());
-            return false;
+            return mk_clause(m_lemma.size(), m_lemma.data(), true, m_lemma_assumptions.get());
         }
 
-        void resolve_not_found_decision(clause *& new_cls) {
+        clause* resolve_not_found_decision() {
             // Case 1)
             // We just have to find the maximal variable in m_lemma, and return to that stage
             // Remark: the lemma may contain only boolean literals, in this case new_max_var == null_var;
@@ -2326,9 +2325,10 @@ namespace nlsat {
             TRACE("nlsat_resolve", tout << "backtracking to stage: " << new_max_var << ", curr: " << m_xk << "\n";);
             undo_until_stage(new_max_var);
             SASSERT(m_xk == new_max_var);
-            new_cls = mk_clause(m_lemma.size(), m_lemma.data(), true, m_lemma_assumptions.get());
+            clause * new_cls = mk_clause(m_lemma.size(), m_lemma.data(), true, m_lemma_assumptions.get());
             TRACE("nlsat", tout << "new_level: " << scope_lvl() << "\nnew_stage: " << new_max_var << "\n"; 
                   if (new_max_var != null_var) m_display_var(tout, new_max_var) << "\n";);
+            return new_cls;
         }
 
         void resolve_double_loop(bool & found_decision) {
@@ -2369,9 +2369,7 @@ namespace nlsat {
         /**
            \brief Return true if the conflict was solved.
         */
-        bool resolve(clause & conflict) {
-            clause * conflict_clause = &conflict;
-            m_lemma_assumptions = nullptr;
+        bool resolve(clause * conflict_clause) {
         start:
             SASSERT(check_marks());
             TRACE("nlsat_proof", tout << "STARTING RESOLUTION\n";);
@@ -2422,13 +2420,14 @@ namespace nlsat {
             //    >>> In this case, we remain in the same stage but, we add a new asserted literal
             //        in a previous scope level. We may backjump many decisions.
             //
-            unsigned sz = m_lemma.size();
-            clause * new_cls = nullptr;
+            clause * new_cls;
             if (!found_decision) {
-                resolve_not_found_decision(new_cls);
+                new_cls = resolve_not_found_decision();
             }
             else {
-                if (resolve_found_decision(conflict_clause, new_cls)) return true;
+                new_cls = resolve_found_decision(conflict_clause);
+                if (new_cls == nullptr)
+                    return true;
             }
             NLSAT_VERBOSE(display(verbose_stream(), *new_cls) << "\n";);
             if (!process_clause(*new_cls, true)) {
