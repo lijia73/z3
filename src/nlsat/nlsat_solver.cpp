@@ -2422,22 +2422,20 @@ namespace nlsat {
             //    >>> In this case, we remain in the same stage but, we add a new asserted literal
             //        in a previous scope level. We may backjump many decisions.
             //
-            clause * new_cls;
             if (!found_decision) {
-                new_cls = resolve_not_found_decision();
+                conflict_clause = resolve_not_found_decision();
             }
             else {
-                new_cls = resolve_found_decision(conflict_clause);
-                if (new_cls == nullptr)
+                conflict_clause = resolve_found_decision(conflict_clause);
+                if (conflict_clause == nullptr)
                     return true;
             }
-            NLSAT_VERBOSE(display(verbose_stream(), *new_cls) << "\n";);
-            if (!process_clause(*new_cls, true)) {
+            NLSAT_VERBOSE(display(verbose_stream(), *conflict_clause) << "\n";);
+            if (!process_clause(*conflict_clause, true)) {
                 TRACE("nlsat", tout << "new clause triggered another conflict, restarting conflict resolution...\n";
-                      display(tout, *new_cls) << "\n";
+                      display(tout, *conflict_clause) << "\n";
                       );
                 // we are still in conflict
-                conflict_clause = new_cls;
                 goto start;
             }
             TRACE("nlsat_resolve_done", display_assignment(tout););
