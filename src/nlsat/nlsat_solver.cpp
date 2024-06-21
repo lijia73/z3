@@ -1646,8 +1646,10 @@ namespace nlsat {
                         return l_false;                    
                     if (m_stats.m_conflicts >= m_max_conflicts)
                         return l_undef;
-                    if (m_round && should_reorder())
+                    if (m_round && should_reorder()) {
+                        m_restart_threshold *= 1.1;
                         goto REORDER;
+                    }
                     log();
                 }
                
