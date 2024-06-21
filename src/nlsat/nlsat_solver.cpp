@@ -2330,30 +2330,9 @@ namespace nlsat {
             TRACE("nlsat", tout << "new_level: " << scope_lvl() << "\nnew_stage: " << new_max_var << "\n"; 
                   if (new_max_var != null_var) m_display_var(tout, new_max_var) << "\n";);
         }
-        /**
-           \brief Return true if the conflict was solved.
-        */
-        bool resolve(clause & conflict) {
-            clause * conflict_clause = &conflict;
-            m_lemma_assumptions = nullptr;
-        start:
-            SASSERT(check_marks());
-            TRACE("nlsat_proof", tout << "STARTING RESOLUTION\n";);
-            TRACE("nlsat_proof_sk", tout << "STARTING RESOLUTION\n";);
-            m_stats.m_conflicts++;
-            TRACE("nlsat", tout << "resolve, conflicting clause:\n"; display(tout, *conflict_clause) << "\n";
-                  tout << "xk: "; if (m_xk != null_var) m_display_var(tout, m_xk); else tout << "<null>"; tout << "\n";
-                  tout << "scope_lvl: " << scope_lvl() << "\n";
-                  tout << "current assignment\n"; display_assignment(tout););
-            
-            m_num_marks = 0;
-            m_lemma.reset();
-            m_lemma_assumptions = nullptr;
-            scoped_reset_marks _sr(*this);
-            resolve_clause(null_bool_var, *conflict_clause);
 
+        void resolve_double_loop(bool & found_decision) {
             unsigned top = m_trail.size();
-            bool found_decision;
             while (true) {
                 found_decision = false;
                 while (m_num_marks > 0)
@@ -2385,7 +2364,32 @@ namespace nlsat {
                 TRACE("nlsat_resolve", tout << "scope_lvl: " << scope_lvl() << " num marks: " << m_num_marks << "\n";);
                 SASSERT(scope_lvl() == max_lvl);
             }
+        }
 
+        /**
+           \brief Return true if the conflict was solved.
+        */
+        bool resolve(clause & conflict) {
+            clause * conflict_clause = &conflict;
+            m_lemma_assumptions = nullptr;
+        start:
+            SASSERT(check_marks());
+            TRACE("nlsat_proof", tout << "STARTING RESOLUTION\n";);
+            TRACE("nlsat_proof_sk", tout << "STARTING RESOLUTION\n";);
+            m_stats.m_conflicts++;
+            TRACE("nlsat", tout << "resolve, conflicting clause:\n"; display(tout, *conflict_clause) << "\n";
+                  tout << "xk: "; if (m_xk != null_var) m_display_var(tout, m_xk); else tout << "<null>"; tout << "\n";
+                  tout << "scope_lvl: " << scope_lvl() << "\n";
+                  tout << "current assignment\n"; display_assignment(tout););
+            
+            m_num_marks = 0;
+            m_lemma.reset();
+            m_lemma_assumptions = nullptr;
+            scoped_reset_marks _sr(*this);
+            resolve_clause(null_bool_var, *conflict_clause);
+
+            bool found_decision;
+            resolve_double_loop(found_decision);
             TRACE("nlsat_proof", tout << "New lemma\n"; display(tout, m_lemma); tout << "\n=========================\n";);
             TRACE("nlsat_proof_sk", tout << "New lemma\n"; display_abst(tout, m_lemma); tout << "\n=========================\n";);
 
