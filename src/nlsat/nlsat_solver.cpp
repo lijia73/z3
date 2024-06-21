@@ -2366,11 +2366,7 @@ namespace nlsat {
             }
         }
 
-        /**
-           \brief Return true if the conflict was solved.
-        */
-        bool resolve(clause * conflict_clause) {
-        start:
+        void resolve_generate_lemma(clause* conflict_clause, bool & found_decision) {
             SASSERT(check_marks());
             TRACE("nlsat_proof", tout << "STARTING RESOLUTION\n";);
             TRACE("nlsat_proof_sk", tout << "STARTING RESOLUTION\n";);
@@ -2385,12 +2381,19 @@ namespace nlsat {
             m_lemma_assumptions = nullptr;
             scoped_reset_marks _sr(*this);
             resolve_clause(null_bool_var, *conflict_clause);
-
-            bool found_decision;
             resolve_double_loop(found_decision);
             TRACE("nlsat_proof", tout << "New lemma\n"; display(tout, m_lemma); tout << "\n=========================\n";);
             TRACE("nlsat_proof_sk", tout << "New lemma\n"; display_abst(tout, m_lemma); tout << "\n=========================\n";);
 
+        }
+
+        /**
+           \brief Return true if the conflict was solved.
+        */
+        bool resolve(clause * conflict_clause) {
+        start:
+            bool found_decision;
+            resolve_generate_lemma(conflict_clause, found_decision);
             if (m_lemma.empty()) {
                 TRACE("nlsat", tout << "empty clause generated\n";);
                 return false; // problem is unsat, empty clause was generated
@@ -2403,7 +2406,6 @@ namespace nlsat {
             if (m_check_lemmas) {
                 check_lemma(m_lemma.size(), m_lemma.data(), false, m_lemma_assumptions.get());
             }
-
             if (m_log_lemmas) 
                 log_lemma(verbose_stream(), m_lemma.size(), m_lemma.data(), false);
     
