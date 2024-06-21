@@ -293,6 +293,7 @@ namespace nlsat {
             m_log_lemmas     = p.log_lemmas();
             m_check_lemmas   = p.check_lemmas();
             m_round = p.round();
+            m_restart_threshold = p.restart_threshold();
             m_ism.set_seed(m_random_seed);
             m_explain.set_simplify_cores(m_simplify_cores);
             m_explain.set_minimize_cores(min_cores);
@@ -1595,8 +1596,8 @@ namespace nlsat {
             TRACE("nlsat", display_smt2(tout););
             m_bk = 0;
             m_xk = null_var;
-            while (true) {
-                
+            while (true) {                
+            REORDER:
                 if (should_reorder())
                     do_reorder();
 
@@ -1640,12 +1641,13 @@ namespace nlsat {
                     }
                     if (conflict_clause == nullptr)
                         break;
-
                        
                     if (!resolve(conflict_clause)) 
                         return l_false;                    
                     if (m_stats.m_conflicts >= m_max_conflicts)
                         return l_undef;
+                    if (m_round && should_reorder())
+                        goto REORDER;
                     log();
                 }
                
