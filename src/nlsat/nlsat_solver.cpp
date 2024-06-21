@@ -2292,6 +2292,19 @@ namespace nlsat {
             }
         }
 
+        // There are two possibilities:
+        // 1) m_lemma contains only literals from previous stages, and they
+        //    are false in the current interpretation. We make progress 
+        //    by returning to a previous stage with additional information (new clause)
+        //    that forces us to select a new partial interpretation
+        //    >>> Return to some previous stage (we may also backjump many decisions and stages).
+        //    
+        // 2) m_lemma contains at most one literal from the current level (the last literal).
+        //    Moreover, this literal was a decision, but the new lemma forces it to 
+        //    be assigned to a different value.
+        //    >>> In this case, we remain in the same stage but, we add a new asserted literal
+        //        in a previous scope level. We may backjump many decisions.
+        //
         clause* resolve_found_decision(clause *conflict_clause) {
             SASSERT(scope_lvl() >= 1);
             // Case 2)
@@ -2391,52 +2404,39 @@ namespace nlsat {
            \brief Return true if the conflict was solved.
         */
         bool resolve(clause * conflict_clause) {
-        start:
-            bool found_decision;
-            resolve_generate_lemma(conflict_clause, found_decision);
-            if (m_lemma.empty()) {
-                TRACE("nlsat", tout << "empty clause generated\n";);
-                return false; // problem is unsat, empty clause was generated
-            }
+            while (true) {
+                bool found_decision;
+                resolve_generate_lemma(conflict_clause, found_decision);
+                if (m_lemma.empty()) {
+                    TRACE("nlsat", tout << "empty clause generated\n";);
+                    return false; // problem is unsat, empty clause was generated
+                }
 
-            reset_marks(); // remove marks from the literals in m_lemmas.
-            TRACE("nlsat", tout << "new lemma:\n"; display(tout, m_lemma.size(), m_lemma.data()); tout << "\n";
-                  tout << "found_decision: " << found_decision << "\n";);
+                reset_marks(); // remove marks from the literals in m_lemmas.
+                TRACE("nlsat", tout << "new lemma:\n"; display(tout, m_lemma.size(), m_lemma.data()); tout << "\n";
+                      tout << "found_decision: " << found_decision << "\n";);
             
-            if (m_check_lemmas) {
-                check_lemma(m_lemma.size(), m_lemma.data(), false, m_lemma_assumptions.get());
-            }
-            if (m_log_lemmas) 
-                log_lemma(verbose_stream(), m_lemma.size(), m_lemma.data(), false);
+                if (m_check_lemmas) {
+                    check_lemma(m_lemma.size(), m_lemma.data(), false, m_lemma_assumptions.get());
+                }
+                if (m_log_lemmas) 
+                    log_lemma(verbose_stream(), m_lemma.size(), m_lemma.data(), false);
     
-            // There are two possibilities:
-            // 1) m_lemma contains only literals from previous stages, and they
-            //    are false in the current interpretation. We make progress 
-            //    by returning to a previous stage with additional information (new clause)
-            //    that forces us to select a new partial interpretation
-            //    >>> Return to some previous stage (we may also backjump many decisions and stages).
-            //    
-            // 2) m_lemma contains at most one literal from the current level (the last literal).
-            //    Moreover, this literal was a decision, but the new lemma forces it to 
-            //    be assigned to a different value.
-            //    >>> In this case, we remain in the same stage but, we add a new asserted literal
-            //        in a previous scope level. We may backjump many decisions.
-            //
-            if (!found_decision) {
-                conflict_clause = resolve_not_found_decision();
-            }
-            else {
-                conflict_clause = resolve_found_decision(conflict_clause);
-                if (conflict_clause == nullptr)
-                    return true;
-            }
-            NLSAT_VERBOSE(display(verbose_stream(), *conflict_clause) << "\n";);
-            if (!process_clause(*conflict_clause, true)) {
+                if (found_decision) {
+                    conflict_clause = resolve_found_decision(conflict_clause);
+                    if (conflict_clause == nullptr)
+                        return true;
+                }
+                else {
+                    conflict_clause = resolve_not_found_decision();
+                }
+                NLSAT_VERBOSE(display(verbose_stream(), *conflict_clause) << "\n";);
+                if (process_clause(*conflict_clause, true))
+                    break;
+
                 TRACE("nlsat", tout << "new clause triggered another conflict, restarting conflict resolution...\n";
                       display(tout, *conflict_clause) << "\n";
-                      );
-                // we are still in conflict
-                goto start;
+                    );
             }
             TRACE("nlsat_resolve_done", display_assignment(tout););
             return true;
