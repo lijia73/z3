@@ -16,11 +16,42 @@ Author:
 Revision History:
 
 --*/
+#include<vector>
+#include<unordered_set>
 #include "sat/dimacs.h"
 #undef max
 #undef min
 #include "sat/sat_solver.h"
 
+struct lex_error {};
+
+std::vector<int> indsup;
+std::unordered_set<int> indset;
+bool has_ind = false;
+
+class stream_buffer {
+    std::istream & m_stream;
+    int            m_val;
+    unsigned       m_line;
+public:
+    
+    stream_buffer(std::istream & s):
+        m_stream(s),
+        m_line(0) {
+        m_val = m_stream.get();
+    }
+
+    int  operator *() const { 
+        return m_val;
+    }
+
+    void operator ++() { 
+        m_val = m_stream.get();
+        if (m_val == '\n') ++m_line;
+    }
+
+    unsigned line() const { return m_line; }
+};
 template<typename Buffer>
 static bool is_whitespace(Buffer & in) {
     return (*in >= 9 && *in <= 13) || *in == 32;
@@ -92,6 +123,9 @@ static void read_clause(Buffer & in, std::ostream& err, sat::solver & solver, sa
         while (static_cast<unsigned>(var) >= solver.num_vars())
             solver.mk_var();
         lits.push_back(sat::literal(var, parsed_lit < 0));
+        if (!has_ind) {
+            indset.insert(var);
+        }
     }
 }
 
@@ -123,8 +157,35 @@ static bool parse_dimacs_core(Buffer & in, std::ostream& err, sat::solver & solv
             if (*in == EOF) {
                 break;
             }
-            else if (*in == 'c' || *in == 'p') {
+            else if (*in == 'p') {
                 skip_line(in);
+            }
+            else if (*in == 'c') {
+                bool is_ind = true;
+                char ind[] = " ind";
+                for (int index = 0; index < 4; ++ index) {
+                    ++in;
+                    if (*in != ind[index]) {
+                        is_ind = false;
+                        break;
+                    }
+                }
+                if (!is_ind) {
+                    skip_line(in);
+                    continue;
+                }
+                ++in;
+                int parsed_lit;
+                while (true) {
+                    parsed_lit = parse_int(in, err);
+                    if (parsed_lit == 0)
+                        break;
+                    if (indset.find(parsed_lit) == indset.end()) {
+                        indset.insert(parsed_lit);
+                        indsup.push_back(parsed_lit);
+                        has_ind = true;
+                    }
+                }
             }
             else {
                 read_clause(in, err, solver, lits);
@@ -135,6 +196,14 @@ static bool parse_dimacs_core(Buffer & in, std::ostream& err, sat::solver & solv
     catch (dimacs::lex_error) {
         return false;
     }
+    if (!has_ind) {
+        for (int lit = 0; lit < solver.num_vars(); ++lit) {
+            if (indset.find(lit) != indset.end()) {
+                indsup.push_back(lit);
+            }
+        }
+    }
+    indset.clear();
     return true;
 }
 

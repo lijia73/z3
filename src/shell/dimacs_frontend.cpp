@@ -17,8 +17,10 @@ Revision History:
 
 --*/
 #include<iostream>
+#include<unordered_map>
 #include<time.h>
 #include<signal.h>
+#include<vector>
 #include "util/timeout.h"
 #include "util/rlimit.h"
 #include "util/gparams.h"
@@ -32,6 +34,16 @@ Revision History:
 #include "tactic/fd_solver/fd_solver.h"
 
 
+struct cell {
+    int c;
+    bool v;
+};
+
+params_ref p;
+reslimit limit;
+extern std::vector<int> indsup;
+std::unordered_map<std::string, struct cell> hist;
+double solver_time = 0.0;
 extern bool          g_display_statistics;
 static sat::solver * g_solver = nullptr;
 static clock_t       g_start_time;
@@ -175,6 +187,219 @@ void verify_solution(char const * file_name) {
     }
 }
 
+double duration(struct timespec * a, struct timespec * b) {
+    return (b->tv_sec - a->tv_sec) + 1.0e-9 * (b->tv_nsec - a->tv_nsec);
+}
+
+bool check_sample(sat::solver & solver, std::string & line) {
+        struct timespec start;
+        clock_gettime(CLOCK_REALTIME, &start);
+
+        sat::solver newsolver(p, limit);
+        newsolver.copy(solver);
+        std::istringstream in(line);
+        int nmut;
+        in >> nmut;
+        char c;
+        in >> c;
+        in >> c;
+        int k = 0;
+        while(!in.eof()) {
+          sat::literal_vector lits;
+          lits.reset();
+          if (c == '0') {
+            lits.push_back(sat::literal(indsup[k], true));
+          } else if (c == '1') {
+            lits.push_back(sat::literal(indsup[k], false));
+          } else {
+            printf("#%c,%d#", c, c);
+            abort();
+          }
+          newsolver.mk_clause(lits.size(), lits.data());
+
+          in >> c;
+          ++k;
+        }
+        lbool r = newsolver.check();
+        bool result = false;
+        switch (r) {
+          case l_true:
+            result = true;
+            break;
+          case l_undef:
+            std::cout << "unknown\n";
+            break;
+          case l_false:
+            break;
+        }
+
+        struct timespec end;
+        clock_gettime(CLOCK_REALTIME, &end);
+        solver_time += duration(&start, &end);
+        return result;
+}
+
+void quicksampler_check(char const * file_name, sat::solver & solver, double timeout) {
+    std::string s(file_name);
+    s += ".samples";
+    std::ifstream ifs(s);
+
+    int samples = 0;
+    int valid[7] = {0};
+    int invalid[7] = {0};
+    int total[7] = {0};
+    struct timespec initial;
+    clock_gettime(CLOCK_REALTIME, &initial);
+    srand(initial.tv_sec);
+
+    int count = 0;
+    int steps = 0;
+    auto p = gparams::get_module("sat");
+    p.set_bool("produce_models", true);
+    for (std::string line; std::getline(ifs, line); ) {
+        ++count;
+        check_sample(solver, line);
+        if (count == 5) {
+            clock_gettime(CLOCK_REALTIME, &initial);
+            steps = 0;
+        }
+        ++steps;
+        if (count == 10) break;
+    }
+    struct timespec current;
+    clock_gettime(CLOCK_REALTIME, &current);
+    double step = duration(&initial, &current) / steps;
+    printf("Step %f s\n", step);
+
+    ifs.clear();
+    ifs.seekg(0, std::ios::beg);
+
+    count = 0;
+    for (std::string line; std::getline(ifs, line); ) {
+        ++count;
+        int nmut = line[0] - '0';
+        ++total[nmut];
+    }
+
+    double probability = 1.0;
+
+    if (timeout != 0.0 && timeout / step < count) {
+        probability = (timeout / step) / count;
+    }
+    printf("Probability %f\n", probability);
+
+    double prob[7] = {0.0};
+    for (int i = 0; i < 7; ++i) {
+        int min = total[i] < 20 ? total[i] : 20;
+        if (total[i] * probability < min) {
+            prob[i] = (double)min / (double)total[i];
+            printf("prob[%d] = %f\n", i, prob[i]);
+        }
+    }
+
+    int calls = 0;
+
+    ifs.clear();
+    ifs.seekg(0, std::ios::beg);
+
+    clock_gettime(CLOCK_REALTIME, &initial);
+
+    for (std::string line; std::getline(ifs, line); ) {
+        int nmut = line[0] - '0';
+        bool run1 = rand() <= probability * RAND_MAX;
+        bool run2 = false;
+        if (prob[nmut])
+            run2 = rand() <= prob[nmut] * RAND_MAX;
+
+        bool result;
+        if (run1 || run2) {
+            auto search = hist.find(line.substr(3));
+            if (search != hist.end()) {
+                result = search->second.v;
+                if (run1) {
+                    ++search->second.c;
+                }
+            } else {
+                result = check_sample(solver, line);
+                calls += 1;
+                struct cell mycell;
+                mycell.c = run1? 1 : 0;
+                mycell.v = result;
+                hist.insert({line.substr(3), mycell});
+            }
+
+            if (result) {
+                ++valid[nmut];
+            } else {
+                ++invalid[nmut];
+            }
+            ++samples;
+        }
+    }
+    ifs.close();
+    printf("Mutations\n");
+    double all_v = 0.0;
+    int all_t = 0;
+    for (int i = 0; i < 7; ++ i) {
+        printf("%d %d %d %d\n", i, valid[i], invalid[i], total[i]);
+        if (valid[i] + invalid[i])
+            all_v += (double)total[i] * (double)valid[i] / ((double)valid[i] + invalid[i]);
+        all_t += total[i];
+    }
+    printf("All\n");
+    printf("%f / %d = %f\n", all_v, all_t, all_v/all_t);
+
+    std::vector<int> good;
+    std::vector<int> bad;
+    for (const auto& it : hist) {
+        if (it.second.v) {
+            if (it.second.c >= good.size())
+                good.resize(it.second.c + 1);
+            ++good[it.second.c];
+        } else {
+            if (it.second.c >= bad.size())
+                bad.resize(it.second.c + 1);
+            ++bad[it.second.c];
+        }
+    }
+    printf("Valid\n");
+    count = 0;
+    for (auto v : good) {
+        printf("%d %d\n", count, v);
+        ++count;
+    }
+    printf("Invalid\n");
+    count = 0;
+    for (auto v : bad) {
+        printf("%d %d\n", count, v);
+        ++count;
+    }
+    clock_gettime(CLOCK_REALTIME, &current);
+    double total_time = duration(&initial, &current);
+    printf("Total %f s\n", total_time);
+    printf("Solver %f s\n", solver_time);
+    printf("Checked %d\n", samples);
+    printf("Calls %d\n", calls);
+
+    std::string o(file_name);
+    o += ".samples.valid";
+    std::ofstream ofs(o);
+    for (const auto& it : hist) {
+        if (it.second.v) {
+            const char * sol = it.first.c_str();
+            for (int lit : indsup) {
+                if (*sol == '0')
+                    ofs << '-';
+                ofs << lit << ' ';
+                ++sol;
+            }
+            ofs << "0:" << it.second.c << '\n';
+        }
+    }
+    ofs.close();
+    exit(0);
+}
+
 lbool solve_parallel(sat::solver& s) {
     params_ref p = gparams::get_module("sat");
     ast_manager m;
@@ -244,6 +469,11 @@ unsigned read_dimacs(char const * file_name) {
         parse_dimacs(std::cin, std::cerr, solver);
     }
     IF_VERBOSE(20, solver.display_status(verbose_stream()););
+
+    if (p.get_bool("quicksampler_check", false)) {
+        double timeout = p.get_double("quicksampler_check.timeout", 3600.0);
+        quicksampler_check(file_name, solver, timeout);
+    }
     
     lbool r;
     vector<sat::literal_vector> tracking_clauses;
