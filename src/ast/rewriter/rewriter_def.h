@@ -23,6 +23,8 @@ Notes:
 #include "ast/ast_ll_pp.h"
 #include "ast/ast_pp.h"
 
+void process_coverage(expr_ref & m_r, app * t, ast_manager & m);
+
 template<typename Config>
 template<bool ProofGen>
 void rewriter_tpl<Config>::process_var(var * v) {
@@ -314,7 +316,7 @@ void rewriter_tpl<Config>::process_app(app * t, frame & fr) {
             }
         }
         br_status st = m_cfg.reduce_app(f, new_num_args, new_args, m_r, m_pr2);       
-        
+        process_coverage(m_r, t, m());
         CTRACE("reduce_app", true || st != BR_FAILED || new_t,
                tout << mk_bounded_pp(t, m()) << "\n";
                tout << "st: " << st;

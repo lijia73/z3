@@ -1073,6 +1073,8 @@ class Component:
         includes = extract_c_includes(os.path.join(self.src_dir, basename))
         out.write(os.path.join(self.to_src_dir, basename))
         for include, orig_include in includes.items():
+            if include == 'api_context.h' and basename == 'model.cpp':
+                continue
             owner = self.find_file(include, basename, orig_include)
             out.write(' %s.node' % os.path.join(owner.build_dir, include))
 
@@ -1081,6 +1083,8 @@ class Component:
         fullname = os.path.join(self.src_dir, basename)
         includes = extract_c_includes(fullname)
         for include, orig_include in includes.items():
+            if include == 'api_context.h' and basename == 'model.cpp':
+                continue
             owner = self.find_file(include, fullname, orig_include)
             owner.add_h_rule(out, include)
 

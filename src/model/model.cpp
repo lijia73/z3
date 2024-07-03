@@ -18,8 +18,12 @@ Revision History:
 --*/
 #include "ast/ast.h"
 #include "util/top_sort.h"
+#include<unordered_map>
+#include<vector>
+#include "model/model.h"
 #include "ast/ast_pp.h"
 #include "ast/ast_ll_pp.h"
+#include "ast/rewriter/bv_rewriter.h"
 #include "ast/rewriter/var_subst.h"
 #include "ast/rewriter/th_rewriter.h"
 #include "ast/rewriter/expr_safe_replace.h"
@@ -40,6 +44,200 @@ Revision History:
 #include "model/numeral_factory.h"
 #include "model/fpa_factory.h"
 
+#include "api/api_context.h"
+
+struct coverage_small {
+    unsigned long c0;
+    unsigned long c1;
+};
+
+struct coverage_big {
+    std::vector<bool> c0;
+    std::vector<bool> c1;
+};
+
+struct coverage_struct {
+    struct coverage_small s;
+    struct coverage_big b;
+    int index;
+};
+
+typedef struct coverage_struct coverage;
+
+struct coverage_count_struct {
+    int c0;
+    int c1;
+};
+
+typedef struct coverage_count_struct coverage_count;
+
+Z3_API bool get_coverage_vector = false;
+Z3_API std::vector<coverage_count> coverage_vector;
+
+Z3_API int coverage_enable = 0;
+Z3_API int coverage_bool = 0;
+Z3_API int coverage_bv = 0;
+Z3_API int coverage_all_bool = 0;
+Z3_API int coverage_all_bv = 0;
+Z3_API std::unordered_map<app*, coverage> covered;
+
+Z3_API Z3_ast parse_bv(char const * n, Z3_sort s, Z3_context ctx);
+Z3_API std::string bv_string(Z3_ast ast, Z3_context ctx);
+
+
+typedef rational numeral;
+
+Z3_ast parse_bv(char const * n, Z3_sort s, Z3_context ctx) {
+    rational result = rational(0);
+    while(*n) {
+        char c = *n;
+        if ('0' <= c && c <= '9') {
+            result *= rational(16);
+            result += rational(c - '0');
+        }
+        else if ('a' <= c && c <= 'f') {
+            result *= rational(16);
+            result += rational(10 + (c - 'a'));
+        }
+
+        ++n;
+    }
+    ast * a = mk_c(ctx)->mk_numeral_core(result, to_sort(s));
+    return of_ast(a);
+}
+
+std::string bv_string(Z3_ast ast, Z3_context ctx) {
+    std::string s;
+    rational val;
+    unsigned sz = 0;
+    unsigned bv_size = 1;
+    mk_c(ctx)->bvutil().is_numeral(to_expr(ast), val, bv_size);
+    if (val.is_neg())
+        val.neg();
+    while (val.is_pos()) {
+        rational c = val % rational(16);
+        val = div(val, rational(16));
+        char n;
+        if (c <= rational(9)) {
+            n = '0' + c.get_unsigned();
+        } else {
+            n = 'a' + (c.get_unsigned() - 10);
+        }
+        s += n;
+        sz+=4;
+    }
+    while (sz < bv_size) {
+        s += '0';
+        sz+=4;
+    }
+    std::reverse(s.begin(), s.end());
+    return s;
+}
+
+bool is_zero_bit(numeral & val, unsigned idx) {
+    if (val.is_zero())
+        return true;
+    div(val, rational::power_of_two(idx), val);
+    return (val % numeral(2)).is_zero();
+}
+
+void process_coverage(expr_ref & m_r, app * t, ast_manager & m) {
+            if (coverage_enable != 2)
+                return;
+            auto res = covered.find(t);
+            if (res == covered.end())
+                return;
+            if (!m_r) {
+                return;
+            }
+            coverage & cov = res->second;
+            params_ref p;
+            bv_rewriter rewriter(m, p);
+            numeral val;
+            unsigned long value;
+            unsigned sz;
+
+            if (m.is_bool(m_r)) {
+                sz = 1;
+                if (m.is_true(m_r)) {
+                    value = 1;
+                    if (get_coverage_vector)
+                        ++coverage_vector[cov.index].c1;
+                } else if (m.is_false(m_r)) {
+                    value = 0;
+                    if (get_coverage_vector)
+                        ++coverage_vector[cov.index].c0;
+                } else
+                    return;
+            } else {
+                bv_util util(m);
+
+                if (!util.is_bv(m_r))
+                    return;
+                if (!rewriter.is_numeral(m_r, val, sz))
+                    return;
+                value = val.get_uint64();
+                if (get_coverage_vector) {
+                    if (value & 1) {
+                        ++coverage_vector[cov.index].c1;
+                    } else {
+                        ++coverage_vector[cov.index].c0;
+                    }
+                }
+            }
+            if (cov.b.c0.size() == 0) {
+                if (sz == 1) {
+                    ++coverage_all_bool;
+                } else {
+                    coverage_all_bv += sz;
+                }
+                if (sz <= 64) {
+                    cov.s.c0 = 0;
+                    cov.s.c1 = 0;
+                    cov.b.c0.resize(1, false);
+                    cov.b.c1.resize(1, false);
+                } else {
+                    cov.b.c0.resize(sz, false);
+                    cov.b.c1.resize(sz, false);
+                }
+            }
+            if (sz <= 64) {
+                for (unsigned long j = 0; j < sz; ++j) {
+                    if ((value >> j) & 1) {
+                        if (((cov.s.c1 >> j) & 1) == 0) {
+                            cov.s.c1 |= 1ul << j;
+                            if (sz > 1)
+                                ++coverage_bv;
+                            else
+                                ++coverage_bool;
+                        }
+                    } else {
+                        if (((cov.s.c0 >> j) & 1) == 0) {
+                            cov.s.c0 |= 1ul << j;
+                            if (sz > 1)
+                                ++coverage_bv;
+                            else
+                                ++coverage_bool;
+                        }
+                    }
+                }
+            } else {
+                int cur = coverage_bv;
+                for (int j = 0; j < sz; ++j) {
+                    if (is_zero_bit(val, j)) {
+                        if (!cov.b.c0[j]) {
+                            cov.b.c0[j] = true;
+                            ++coverage_bv;
+                        }
+                    } else {
+                        if (!cov.b.c1[j]) {
+                            cov.b.c1[j] = true;
+                            ++coverage_bv;
+                        }
+                    }
+                }
+            }
+}
 
 model::model(ast_manager & m):
     model_core(m),
@@ -86,8 +284,28 @@ model * model::copy() const {
     return mdl;
 }
 
+void visit(expr * e) {
+    app * a = to_app(e);
+    coverage cov;
+    cov.index = coverage_vector.size();
+    coverage_count cov_count;
+    coverage_vector.push_back(cov_count);
+    auto res = covered.emplace(a, cov);
+    if (!res.second)
+        return;
+    for (int i = 0; i < a->get_num_args(); ++i)
+        visit(a->get_args()[i]);
+}
+
+// Remark: eval is for backward compatibility. We should use model_evaluator.
 bool model::eval_expr(expr * e, expr_ref & result, bool model_completion) {
     scoped_model_completion _smc(*this, model_completion);
+    if (coverage_enable == 1) {
+        // visit(e);
+        return true;
+    }
+    model_evaluator ev(*this);
+    ev.set_model_completion(model_completion);
     try {
         result = (*this)(e);
         return true;

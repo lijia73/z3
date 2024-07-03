@@ -30,6 +30,7 @@ build-dist/*
 dist/*
 src/out/*
 doc/html/*
+my/*
 # GTAGS generated files
 src/GPATH
 src/GRTAGS
